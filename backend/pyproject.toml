@@ -2,7 +2,6 @@
 name = "roparun-ci-backend"
 version = "0.1.0"
 description = "Roparun GIS backend: route planning, public viewer, live tracking."
-readme = "../README.md"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",

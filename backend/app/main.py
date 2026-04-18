@@ -1,14 +1,15 @@
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
-from .routers import health
+from .routers import events, health, public, routes, teams
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):  # noqa: ARG001
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
 
 
@@ -23,6 +24,10 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(health.router)
+    app.include_router(teams.router)
+    app.include_router(events.router)
+    app.include_router(routes.router)
+    app.include_router(public.router)
     return app
 
 

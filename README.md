@@ -19,6 +19,23 @@ make migrate            # enable PostGIS on first boot
 
 See [`CLAUDE.md`](CLAUDE.md) for the architecture overview and day-to-day commands. The phased build plan lives in `/root/.claude/plans/i-want-to-create-magical-book.md`.
 
+## Deploy (Coolify)
+
+`docker-compose.prod.yml` is a minimal single-domain production stack: nginx
+serves the built SPA and proxies `/api` and `/ws` to the FastAPI container on
+the internal network. The api runs `alembic upgrade head` on startup.
+
+1. Create a new Coolify resource from this repo, pick
+   `docker-compose.prod.yml` as the compose file.
+2. Set these env vars in Coolify (see `.env.prod.example`):
+   - `POSTGRES_PASSWORD` — required, any strong string.
+   - `ROPARUN_CORS_ORIGINS` — JSON list, e.g. `["https://your.domain"]`.
+   - `VITE_MAPTILER_KEY` — optional; the map falls back to MapLibre demotiles.
+3. Point Coolify's proxy at the `web` service (port 80).
+4. After the first deploy, seed a demo route:
+   `docker compose -f docker-compose.prod.yml exec api python -m app.scripts.seed`
+   Then visit `/t/conclusion/2026`.
+
 ## Layout
 
 ```

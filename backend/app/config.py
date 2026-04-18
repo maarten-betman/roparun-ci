@@ -1,0 +1,19 @@
+from functools import lru_cache
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", env_prefix="ROPARUN_", extra="ignore")
+
+    database_url: str = Field(
+        default="postgresql+psycopg://roparun:roparun@localhost:5432/roparun",
+    )
+    cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
+    env: str = "dev"
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

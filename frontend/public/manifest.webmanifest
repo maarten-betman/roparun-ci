@@ -1,0 +1,10 @@
+{
+  "name": "Roparun Tracker",
+  "short_name": "Roparun",
+  "start_url": "/tracker.html",
+  "scope": "/tracker.html",
+  "display": "standalone",
+  "background_color": "#0b3d91",
+  "theme_color": "#0b3d91",
+  "orientation": "portrait"
+}

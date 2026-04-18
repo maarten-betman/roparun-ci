@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project intent
 
-Web app for the Conclusion Intelligence Roparun team to **plan**, **view**, and **live-track** the ~520 km non-stop Paris→Rotterdam relay run (Whitsun weekend, ~25 people per team: 8 runners, 4+ cyclists, plus drivers / medics / caterers). Full build plan in `/root/.claude/plans/i-want-to-create-magical-book.md` (Phase 0 scaffold done; Phases 1–3 still to land).
+Web app for the Conclusion Intelligence Roparun team to **plan**, **view**, and **live-track** the ~520 km non-stop Paris→Rotterdam relay run (Whitsun weekend, ~25 people per team: 8 runners, 4+ cyclists, plus drivers / medics / caterers). Full build plan in `/root/.claude/plans/i-want-to-create-magical-book.md` (Phases 0 + 1 shipped; Phases 2–3 still to land).
 
 Default branch is `master`. License is MIT.
 
@@ -25,6 +25,7 @@ make down           # stop the stack
 make logs           # tail all services
 make migrate        # alembic upgrade head inside the api container
 make revision m="add routes table"   # autogenerate a new migration
+make seed           # populate a demo Conclusion 2026 route (published)
 make test           # backend pytest + frontend vitest
 make lint           # ruff + eslint
 make typecheck      # mypy + tsc
@@ -34,23 +35,32 @@ Direct single-test invocations (faster than Make):
 
 ```bash
 # backend — inside backend/ with the dev extras installed, or:
-docker compose exec api pytest tests/test_health.py::test_healthz -q
+docker compose exec api pytest tests/test_routes.py::test_gpx_round_trip -q
 
 # frontend
-cd frontend && npm run test -- src/viewer/App.test.tsx
+cd frontend && npm run test -- src/map/style.test.ts
 ```
+
+Backend integration tests (everything in `tests/test_routes.py`) require a
+reachable Docker daemon: `conftest.py` spins a `postgis/postgis:16-3.4`
+testcontainer, runs Alembic to HEAD against it, and shares it across the
+session. When the daemon is unavailable the fixture calls `pytest.skip` so the
+rest of the suite (e.g. `test_gpx_service.py` pure-unit tests) still runs.
 
 ## Architecture big-picture
 
 - The backend is a single FastAPI app (`backend/app/main.py` → `create_app()`), with routers under `backend/app/routers/` and a shared async SQLAlchemy session (`backend/app/db.py`). Settings come from `ROPARUN_*` env vars via `pydantic-settings` (`backend/app/config.py`).
 - Geometries live in PostGIS as `GEOGRAPHY` (EPSG:4326). Do not introduce projections in application code — let PostGIS handle distance/buffer/intersects. Only reach for `pyproj` if you truly need non-trivial projection math.
 - Alembic runs **async** (see `backend/alembic/env.py`) and reuses `app.db.Base.metadata` as autogenerate target. Every migration must be re-runnable via `make migrate`.
-- The frontend is one pnpm/npm workspace with two Vite inputs (`vite.config.ts` → `rollupOptions.input`). Shared code lives under `src/map/`; feature code is siloed under `src/viewer/`, `src/planner/`, `src/tracker/`. The tracker entry is the PWA — keep its bundle small (no MapLibre unless strictly needed).
+- The frontend is one pnpm/npm workspace with two Vite inputs (`vite.config.ts` → `rollupOptions.input`). Shared code lives under `src/map/` (style resolver) and `src/api/` (typed client + DTOs); feature code is siloed under `src/viewer/`, `src/planner/`, `src/tracker/`. The tracker entry is the PWA — keep its bundle small (no MapLibre unless strictly needed). `src/viewer/main.tsx` is the single entry for `index.html` and dispatches by pathname: `/planner*` renders the planner, `/t/:slug/:year` renders the public viewer for that team+year, everything else renders the default viewer.
+- Route data model (see `backend/app/models/`): `team` → `event` → `route` → ordered `stage[]` + `waypoint[]`. A `route` has `status ∈ {draft, published}`; the `/public/{slug}/{year}` endpoint only returns **published** routes. Stage/waypoint geometries are PostGIS `GEOGRAPHY(LINESTRING|POINT, 4326)`; stage distances are computed server-side via `ST_Length(geom)` in `services/routes.load_route_detail`, so clients never have to project.
+- GeoJSON in/out: the API accepts and returns RFC 7946 `LineString` / `Point` objects directly (see `schemas/geojson.py`). Conversions to/from PostGIS go through `services/geo.py` using `shapely` + `WKTElement`. Don't introduce alternative formats (WKB strings, EWKT, lat/lng tuples) at the API boundary.
+- GPX: `services/gpx.parse_gpx` maps each `<trkseg>` to one stage and each `<wpt>` to a waypoint (`kind=poi`); `build_gpx` is the inverse. `PUT /routes/{id}/content` and `POST /routes/{id}/gpx` both fully replace the stage + waypoint lists — there is no partial-update endpoint by design, the planner batches edits and pushes the whole thing.
 - Live positions flow: **tracker PWA** → batch `POST /ingest` (with IndexedDB offline queue) → `position` table → WebSocket fan-out on `/ws/live` → **viewer** renders markers + breadcrumb trails. Phase 3 will introduce these pieces; they don't exist yet.
 
 ## Working in this repo
 
-- **Do not invent features beyond the current phase.** Check `/root/.claude/plans/i-want-to-create-magical-book.md` for what's in scope now. Phase 0 shipped (scaffold + health probes + placeholder map). Phase 1 is route CRUD + GPX I/O + planner UI.
+- **Do not invent features beyond the current phase.** Check `/root/.claude/plans/i-want-to-create-magical-book.md` for what's in scope now. Phase 0 shipped (scaffold + health probes + placeholder map). Phase 1 shipped (routes CRUD, GPX I/O, planner UI, public viewer endpoint, seed script). Phase 2 is the public viewer polish (stage list sidebar, elevation profile, mobile perf). Phase 3 is live tracking.
 - When adding DB models, always pair them with an Alembic migration in the same commit. Never mutate an old migration after it's merged.
 - The viewer must still render with `VITE_MAPTILER_KEY` unset (demo tiles fallback). Don't regress that — it's how CI and first-time contributors see the map.
 - Keep `/healthz` cheap (no DB). `/readyz` is the one that touches PostGIS.

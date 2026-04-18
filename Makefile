@@ -1,4 +1,4 @@
-.PHONY: dev up down logs migrate revision test lint typecheck backend-test frontend-test backend-lint frontend-lint
+.PHONY: dev up down logs migrate revision seed test lint typecheck backend-test frontend-test backend-lint frontend-lint
 
 dev: up
 	@echo "API:    http://localhost:8000/healthz"
@@ -20,6 +20,9 @@ migrate:
 revision:
 	@test -n "$(m)" || (echo "usage: make revision m='description'" && exit 1)
 	docker compose exec api alembic revision --autogenerate -m "$(m)"
+
+seed:
+	docker compose exec api python -m app.scripts.seed
 
 test: backend-test frontend-test
 

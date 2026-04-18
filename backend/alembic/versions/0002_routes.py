@@ -57,7 +57,7 @@ def upgrade() -> None:
         sa.UniqueConstraint("team_id", "year", name="uq_event_team_year"),
     )
 
-    route_status = postgresql.ENUM("draft", "published", name="route_status")
+    route_status = postgresql.ENUM("draft", "published", name="route_status", create_type=False)
     route_status.create(op.get_bind(), checkfirst=True)
 
     op.create_table(
@@ -72,7 +72,7 @@ def upgrade() -> None:
         sa.Column("name", sa.String(200), nullable=False),
         sa.Column(
             "status",
-            sa.Enum("draft", "published", name="route_status", create_type=False),
+            route_status,
             nullable=False,
             server_default="draft",
         ),
@@ -122,7 +122,13 @@ def upgrade() -> None:
     op.create_index("ix_stage_route_id", "stage", ["route_id"])
 
     waypoint_kind = postgresql.ENUM(
-        "handover", "rest", "checkpoint", "hazard", "poi", name="waypoint_kind"
+        "handover",
+        "rest",
+        "checkpoint",
+        "hazard",
+        "poi",
+        name="waypoint_kind",
+        create_type=False,
     )
     waypoint_kind.create(op.get_bind(), checkfirst=True)
 
@@ -137,15 +143,7 @@ def upgrade() -> None:
         ),
         sa.Column(
             "kind",
-            sa.Enum(
-                "handover",
-                "rest",
-                "checkpoint",
-                "hazard",
-                "poi",
-                name="waypoint_kind",
-                create_type=False,
-            ),
+            waypoint_kind,
             nullable=False,
         ),
         sa.Column("name", sa.String(200), nullable=True),

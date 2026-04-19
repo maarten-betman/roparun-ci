@@ -42,6 +42,13 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      # Give alembic + uvicorn time to come up before the counter starts.
+      start_period: 30s
 
   web:
     build:
@@ -52,7 +59,9 @@ services:
     restart: unless-stopped
     depends_on:
       api:
-        condition: service_started
+        # Wait for the api to be healthy so nginx never proxies to a dead
+        # upstream on first boot (Traefik routes based on this state too).
+        condition: service_healthy
     # Coolify's Traefik discovers the service via Docker labels + the compose
     # network and terminates TLS upstream. `expose:` (internal-only) is what
     # Coolify expects; switching to `ports:` made Coolify skip Traefik routing
@@ -61,6 +70,14 @@ services:
     # `ports: ["80:80"]` to publish to the host.
     expose:
       - "80"
+    healthcheck:
+      # `--spider` avoids writing a response body; busybox wget returns
+      # non-zero on any HTTP status >= 400, which is what we want.
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 volumes:
   db_data:

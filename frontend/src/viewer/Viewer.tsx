@@ -2,6 +2,7 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RouteDetail, Stage, Waypoint, WaypointKind } from "../api/types";
+import { TopBar, TopBarButton } from "../chrome/TopBar";
 import { DEFAULT_CENTER, DEFAULT_ZOOM, mapStyle } from "../map/style";
 import { Sidebar } from "./Sidebar";
 import {
@@ -398,9 +399,43 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
     [detail],
   );
 
+  // Extract a short version label ("V3"/"V4") from the route name for the
+  // TopBar pill. The sidebar's longer warning is now redundant and removed.
+  const versionLabel = detail ? matchVersion(detail.name) : null;
+  const yearFromPath = publicPath?.split("/")?.[1];
+  const topbarMeta = yearFromPath ? yearFromPath : "2026";
+
   return (
     <div style={{ position: "fixed", inset: 0 }}>
-      <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />
+      <TopBar
+        title="Roparun · Route viewer"
+        meta={topbarMeta}
+        versionLabel={versionLabel}
+        actions={
+          <>
+            <TopBarButton onClick={() => shareCurrentUrl()}>Share</TopBarButton>
+            {detail && (
+              <TopBarButton
+                variant="primary"
+                href={`${(import.meta.env.VITE_API_BASE as string | undefined) ?? "/api"}/routes/${detail.id}/gpx`}
+                download
+              >
+                Download GPX
+              </TopBarButton>
+            )}
+          </>
+        }
+      />
+      <div
+        ref={containerRef}
+        style={{
+          position: "absolute",
+          top: "var(--topbar-height, 48px)",
+          left: 0,
+          right: 0,
+          bottom: 0,
+        }}
+      />
       <Sidebar
         detail={detail}
         notFound={notFound}
@@ -416,4 +451,22 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
       />
     </div>
   );
+}
+
+function matchVersion(name: string): string | null {
+  const m = name.match(/\b(V0?[1-4])\b/i);
+  return m ? m[1].toUpperCase() : null;
+}
+
+function shareCurrentUrl(): void {
+  const url = window.location.href;
+  const nav = navigator as Navigator & {
+    share?: (data: ShareData) => Promise<void>;
+    clipboard?: { writeText: (s: string) => Promise<void> };
+  };
+  if (nav.share) {
+    void nav.share({ url, title: document.title }).catch(() => void 0);
+    return;
+  }
+  void nav.clipboard?.writeText(url).catch(() => void 0);
 }

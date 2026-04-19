@@ -89,7 +89,6 @@ export function Sidebar({
       <aside className={`sidebar ${open ? "sidebar--open" : ""}`}>
         <header className="sidebar__header">
           <div>
-            <strong>Roparun · Route viewer</strong>
             <div className="sidebar__sub">
               {detail
                 ? `${detail.name}`
@@ -100,7 +99,10 @@ export function Sidebar({
                     : "Placeholder route"}
             </div>
             {versionTag && (
-              <div className="sidebar__warn" title="Final V4 data is published the Friday before the event">
+              <div
+                className="sidebar__warn"
+                title="Final V4 data is published the Friday before the event"
+              >
                 ⚠ {versionTag} — wait for V4 before the event
               </div>
             )}
@@ -127,17 +129,25 @@ export function Sidebar({
             <section className="sidebar__section">
               <h3>View as</h3>
               <div className="sidebar__presets">
-                {ROLE_PRESETS.map((p) => (
-                  <button
-                    key={p.key}
-                    type="button"
-                    className="sidebar__preset"
-                    onClick={() => onApplyPreset(p.key)}
-                    title={`Toggle layers for ${p.label}`}
-                  >
-                    {p.label}
-                  </button>
-                ))}
+                {ROLE_PRESETS.map((p) => {
+                  const active =
+                    p.layers.every((l) => visibleLayers.has(l)) &&
+                    visibleLayers.size === p.layers.length &&
+                    p.categories.every((c) => visibleCategories.has(c)) &&
+                    visibleCategories.size === p.categories.length;
+                  return (
+                    <button
+                      key={p.key}
+                      type="button"
+                      className={`sidebar__preset ${active ? "sidebar__preset--active" : ""}`}
+                      onClick={() => onApplyPreset(p.key)}
+                      title={`Toggle layers for ${p.label}`}
+                      aria-pressed={active}
+                    >
+                      {p.label}
+                    </button>
+                  );
+                })}
               </div>
             </section>
 

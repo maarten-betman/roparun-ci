@@ -1,0 +1,108 @@
+/* Roparun design tokens — exported from the design-system bundle.
+ * Imported once via src/viewer/main.tsx; all component CSS reads from these.
+ */
+
+:root {
+  /* Brand anchors */
+  --color-roparun-blue: #0b3d91;
+  --color-runners-yellow: #eab308;
+
+  /* Official Roparun brand (from logo) */
+  --brand-roparun-orange: #ef4e23;
+  --brand-roparun-navy: #0b2a5c;
+
+  /* Conclusion Intelligence (team sponsor) */
+  --brand-conclusion-black: #111111;
+  --brand-conclusion-red: #d8453e;
+
+  /* Route scheme */
+  --color-vehicle-ab: #2563eb;
+  --color-vehicle-ab-detour: #1d4ed8;
+  --color-vehicle-c: #06b6d4;
+  --color-forbidden: #dc2626;
+
+  /* Waypoint categories */
+  --color-handover: #f4a261;
+  --color-passage: #3b82f6;
+  --color-unpaved: #b45309;
+  --color-toilet: #7c3aed;
+  --color-sleeping: #2a9d8f;
+  --color-km-marker: #9ca3af;
+  --color-merge-split: #fb923c;
+  --color-environmental: #22c55e;
+
+  /* Neutrals */
+  --fg-1: #111827;
+  --fg-2: #6b7280;
+  --fg-3: #9ca3af;
+  --bg-1: #ffffff;
+  --bg-2: #f3f4f6;
+  --bg-3: #e5e7eb;
+  --border-1: #e5e7eb;
+
+  /* Preset chip (indigo-50) */
+  --chip-bg: #eef2ff;
+  --chip-bg-hover: #e0e7ff;
+  --chip-bg-active: #c7d2fe;
+  --chip-border: #c7d2fe;
+  --chip-border-hover: #a5b4fc;
+  --chip-fg: #1e40af;
+
+  /* Warning (amber) */
+  --warn-bg: #fef3c7;
+  --warn-fg: #92400e;
+
+  /* Error */
+  --error-bg: #fee2e2;
+  --error-fg: #991b1b;
+
+  /* Action / success */
+  --action-bg: #2a9d8f;
+  --action-fg: #ffffff;
+
+  /* Typography */
+  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --fs-eyebrow-xs: 10px;
+  --fs-eyebrow: 11px;
+  --fs-meta: 12px;
+  --fs-row: 13px;
+  --fs-body: 14px;
+  --fs-h2: 15px;
+  --fs-h1: 16px;
+
+  --tracking-eyebrow: 0.05em;
+  --tracking-eyebrow-tight: 0.04em;
+
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 6px;
+  --space-3: 8px;
+  --space-4: 10px;
+  --space-5: 12px;
+  --space-6: 16px;
+  --space-7: 24px;
+  --space-8: 32px;
+
+  /* Radii */
+  --radius-xs: 3px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+
+  /* Shadows */
+  --shadow-chrome: 0 0 12px rgba(0, 0, 0, 0.05);
+  --shadow-float: 0 2px 6px rgba(0, 0, 0, 0.2);
+  --shadow-topbar: 0 1px 4px rgba(0, 0, 0, 0.15);
+
+  /* Layout */
+  --topbar-height: 48px;
+  --sidebar-width: 320px;
+  --planner-sidebar-width: 360px;
+  --mobile-breakpoint: 720px;
+
+  /* Motion */
+  --motion-drawer: 0.2s ease;
+}

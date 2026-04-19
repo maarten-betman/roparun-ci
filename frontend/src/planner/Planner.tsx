@@ -3,6 +3,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client";
 import type { RouteDetail, RouteSummary, Stage, Waypoint } from "../api/types";
+import { TopBar, TopBarButton } from "../chrome/TopBar";
 import { DEFAULT_CENTER, DEFAULT_ZOOM, mapStyle } from "../map/style";
 
 interface PlannerProps {
@@ -188,9 +189,39 @@ export function Planner({ apiKey }: PlannerProps) {
   };
 
   const totalKm = useMemo(() => fmtKm(detail?.total_distance_m ?? null), [detail]);
+  const versionLabel = detail?.name.match(/\b(V0?[1-4])\b/i)?.[1]?.toUpperCase() ?? null;
+  const topbarMeta =
+    detail?.status === "draft" ? "2026 · draft" : detail?.status === "published" ? "2026" : "2026";
 
   return (
-    <div style={{ position: "fixed", inset: 0, display: "grid", gridTemplateColumns: "360px 1fr" }}>
+    <div style={{ position: "fixed", inset: 0 }}>
+      <TopBar
+        title="Roparun · Planner"
+        meta={topbarMeta}
+        versionLabel={versionLabel}
+        actions={
+          detail ? (
+            <TopBarButton
+              variant="primary"
+              href={api.gpxDownloadUrl(detail.id)}
+              download
+            >
+              Download GPX
+            </TopBarButton>
+          ) : undefined
+        }
+      />
+      <div
+        style={{
+          position: "absolute",
+          top: "var(--topbar-height, 48px)",
+          left: 0,
+          right: 0,
+          bottom: 0,
+          display: "grid",
+          gridTemplateColumns: "360px 1fr",
+        }}
+      >
       <aside
         style={{
           borderRight: "1px solid #e5e7eb",
@@ -199,8 +230,6 @@ export function Planner({ apiKey }: PlannerProps) {
           fontFamily: "system-ui, sans-serif",
         }}
       >
-        <h1 style={{ color: "#0b3d91", marginTop: 0 }}>Roparun · Planner</h1>
-
         <label style={{ display: "block", fontSize: 12, color: "#6b7280" }}>Route</label>
         <select
           value={selectedRouteId ?? ""}
@@ -327,6 +356,7 @@ export function Planner({ apiKey }: PlannerProps) {
         )}
       </aside>
       <div ref={containerRef} style={{ position: "relative" }} />
+      </div>
     </div>
   );
 }

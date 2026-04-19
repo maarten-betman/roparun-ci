@@ -1,17 +1,17 @@
 /* Sidebar layout — desktop default, mobile bottom-sheet via media query. */
 .sidebar {
   position: absolute;
-  top: 0;
+  top: var(--topbar-height, 48px);
   left: 0;
   bottom: 0;
-  width: 320px;
-  background: #ffffff;
-  color: #111827;
-  font-family: system-ui, sans-serif;
-  font-size: 14px;
+  width: var(--sidebar-width, 320px);
+  background: var(--bg-1, #ffffff);
+  color: var(--fg-1, #111827);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--fs-body, 14px);
   overflow-y: auto;
-  border-right: 1px solid #e5e7eb;
-  box-shadow: 0 0 12px rgba(0, 0, 0, 0.05);
+  border-right: 1px solid var(--border-1, #e5e7eb);
+  box-shadow: var(--shadow-chrome, 0 0 12px rgba(0, 0, 0, 0.05));
   z-index: 2;
   padding: 16px 16px 24px;
 }
@@ -60,6 +60,15 @@
 .sidebar__preset:hover {
   background: #e0e7ff;
   border-color: #a5b4fc;
+}
+.sidebar__preset--active {
+  background: #c7d2fe;
+  border-color: #818cf8;
+  font-weight: 600;
+}
+.sidebar__preset--active:hover {
+  background: #a5b4fc;
+  border-color: #6366f1;
 }
 
 .sidebar__stats {
@@ -196,6 +205,8 @@
 @media (max-width: 720px) {
   .sidebar-toggle {
     display: block;
+    /* Shift below the topbar so the button doesn't clash with the logo. */
+    top: calc(var(--topbar-height, 48px) + 12px);
   }
   .sidebar {
     top: auto;
@@ -203,10 +214,10 @@
     height: 55vh;
     bottom: 0;
     border-right: 0;
-    border-top: 1px solid #e5e7eb;
-    border-radius: 12px 12px 0 0;
+    border-top: 1px solid var(--border-1, #e5e7eb);
+    border-radius: var(--radius-xl, 12px) var(--radius-xl, 12px) 0 0;
     transform: translateY(100%);
-    transition: transform 0.2s ease;
+    transition: transform var(--motion-drawer, 0.2s ease);
   }
   .sidebar--open {
     transform: translateY(0);

@@ -143,6 +143,16 @@
   border-radius: 3px;
   flex: 0 0 auto;
 }
+.sidebar__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  font-size: 14px;
+  line-height: 1;
+  flex: 0 0 auto;
+}
 .sidebar__rowtext {
   flex: 1;
   overflow: hidden;

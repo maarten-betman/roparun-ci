@@ -1,0 +1,107 @@
+.topbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--topbar-height);
+  background: var(--color-roparun-blue);
+  color: #fff;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-6);
+  gap: var(--space-5);
+  box-shadow: var(--shadow-topbar);
+  font-family: var(--font-ui);
+}
+
+.topbar__logo-chip {
+  background: #fff;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  height: 32px;
+  box-sizing: border-box;
+}
+.topbar__logo {
+  height: 22px;
+  width: auto;
+  display: block;
+}
+
+.topbar__divider {
+  width: 1px;
+  height: 22px;
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.topbar__title {
+  font-size: var(--fs-body);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+.topbar__meta {
+  font-size: var(--fs-meta);
+  color: #c7d2fe;
+  margin-left: var(--space-1);
+  white-space: nowrap;
+}
+
+.topbar__spacer {
+  flex: 1;
+}
+
+.topbar__pill {
+  font-size: var(--fs-eyebrow);
+  color: #fde68a;
+  background: rgba(234, 179, 8, 0.15);
+  border: 1px solid rgba(234, 179, 8, 0.4);
+  padding: 3px var(--space-3);
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.topbar__btn {
+  font-size: var(--fs-meta);
+  border-radius: var(--radius-md);
+  padding: 5px var(--space-4);
+  font-family: inherit;
+  cursor: pointer;
+  text-decoration: none;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.topbar__btn--ghost {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: #fff;
+}
+.topbar__btn--ghost:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+.topbar__btn--primary {
+  background: #fff;
+  border: 0;
+  color: var(--color-roparun-blue);
+  font-weight: 600;
+}
+.topbar__btn--primary:hover {
+  background: #f3f4f6;
+}
+
+/* Mobile: condense the top bar to stay usable on narrow phones. */
+@media (max-width: 720px) {
+  .topbar {
+    padding: 0 var(--space-4);
+    gap: var(--space-3);
+  }
+  .topbar__meta,
+  .topbar__pill {
+    display: none;
+  }
+  .topbar__btn {
+    padding: 4px var(--space-3);
+  }
+}

@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { RouteDetail } from "../api/types";
 import {
+  ROLE_PRESETS,
   STAGE_LAYERS,
   WAYPOINT_CATEGORIES,
   categoryLabel,
@@ -16,12 +17,21 @@ export interface SidebarProps {
   onToggleCategory: (key: string) => void;
   onShowAll: () => void;
   onHideAll: () => void;
+  onApplyPreset: (presetKey: string) => void;
   onFlyToStage?: (ordinal: number) => void;
 }
 
 function fmtKm(meters: number | null | undefined): string {
   if (meters == null) return "–";
   return `${(meters / 1000).toFixed(1)} km`;
+}
+
+/** Detect a "concept" route: name ending in V1/V2/V3 (organisers ship final
+ *  data as V4 the Friday before the event). Used to flag the route as
+ *  provisional in the sidebar header. */
+function detectConceptVersion(name: string): string | null {
+  const m = name.match(/V0?([1-3])\b/i);
+  return m ? `concept (V${m[1]})` : null;
 }
 
 export function Sidebar({
@@ -34,6 +44,7 @@ export function Sidebar({
   onToggleCategory,
   onShowAll,
   onHideAll,
+  onApplyPreset,
   onFlyToStage,
 }: SidebarProps) {
   const [open, setOpen] = useState(false); // mobile drawer state
@@ -49,6 +60,7 @@ export function Sidebar({
   }, [detail]);
 
   const totalKm = fmtKm(detail?.total_distance_m ?? null);
+  const versionTag = detail ? detectConceptVersion(detail.name) : null;
 
   return (
     <>
@@ -74,6 +86,11 @@ export function Sidebar({
                     ? "Loading…"
                     : "Placeholder route"}
             </div>
+            {versionTag && (
+              <div className="sidebar__warn" title="Final V4 data is published the Friday before the event">
+                ⚠ {versionTag} — wait for V4 before the event
+              </div>
+            )}
           </div>
         </header>
 
@@ -93,6 +110,23 @@ export function Sidebar({
                 <dd>{detail.waypoints.length.toLocaleString()}</dd>
               </div>
             </dl>
+
+            <section className="sidebar__section">
+              <h3>View as</h3>
+              <div className="sidebar__presets">
+                {ROLE_PRESETS.map((p) => (
+                  <button
+                    key={p.key}
+                    type="button"
+                    className="sidebar__preset"
+                    onClick={() => onApplyPreset(p.key)}
+                    title={`Toggle layers for ${p.label}`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </section>
 
             <section className="sidebar__section">
               <h3>Tracks</h3>

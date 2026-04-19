@@ -5,22 +5,24 @@ import type { RouteDetail, Stage, Waypoint, WaypointKind } from "../api/types";
 import { DEFAULT_CENTER, DEFAULT_ZOOM, mapStyle } from "../map/style";
 import { Sidebar } from "./Sidebar";
 import {
+  ROLE_PRESETS,
   WAYPOINT_CATEGORIES,
   categoryColor,
+  categoryStyle,
   defaultVisibleCategories,
   defaultVisibleLayers,
   layerColor,
 } from "./catalog";
 import "./sidebar.css";
 
-const DEFAULT_STAGE_COLOR = "#e63946";
+const DEFAULT_STAGE_COLOR = "#eab308"; // matches runners yellow
 const DEFAULT_WP_COLOR = "#6b7280";
 
 const KIND_FALLBACK: Record<WaypointKind, string> = {
   handover: "#f4a261",
   rest: "#2a9d8f",
   checkpoint: "#0b3d91",
-  hazard: "#d62828",
+  hazard: "#dc2626",
   poi: DEFAULT_WP_COLOR,
 };
 
@@ -63,6 +65,7 @@ function waypointFC(wps: Waypoint[]): GeoJSON.FeatureCollection {
         kind: w.kind,
         category: w.category ?? "",
         categoryLabel: WAYPOINT_CATEGORIES[w.category ?? ""]?.label ?? w.category ?? w.kind,
+        style: categoryStyle(w.category),
         name: w.name ?? "",
         color: categoryColor(w.category, KIND_FALLBACK[w.kind]),
       },
@@ -145,26 +148,39 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
         type: "circle",
         source: "waypoints",
         paint: {
+          // Two looks in one layer: trace categories (vehicle road overlays) get
+          // small, tightly-packed dots that visually read as a coloured line;
+          // marker categories (CPs, handovers, etc.) get bigger circles with
+          // a white stroke for legibility.
           "circle-radius": [
-            "interpolate",
-            ["linear"],
-            ["zoom"],
-            6,
-            2,
-            10,
-            4,
-            14,
-            7,
+            "case",
+            ["==", ["get", "style"], "trace"],
+            ["interpolate", ["linear"], ["zoom"], 6, 1, 10, 2, 14, 3.5],
+            ["interpolate", ["linear"], ["zoom"], 6, 2, 10, 4, 14, 7],
           ],
           "circle-color": ["coalesce", ["get", "color"], DEFAULT_WP_COLOR],
-          "circle-stroke-width": 1,
+          "circle-stroke-width": [
+            "case",
+            ["==", ["get", "style"], "trace"],
+            0,
+            1,
+          ],
           "circle-stroke-color": "#ffffff",
+          "circle-opacity": [
+            "case",
+            ["==", ["get", "style"], "trace"],
+            0.85,
+            1,
+          ],
         },
       });
 
       map.on("mouseenter", "waypoints-circle", (e) => {
         const f = e.features?.[0];
         if (!f) return;
+        // Hover popups are noisy on the dense trace clouds; only show them
+        // for actual POI markers.
+        if ((f.properties?.style as string) === "trace") return;
         map.getCanvas().style.cursor = "pointer";
         const props = f.properties ?? {};
         const name = (props.name as string) || "Point";
@@ -210,7 +226,6 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
     const map = mapRef.current;
     if (!map) return;
     const apply = () => {
-      // Lines: only show stages whose layer is visible. Empty layer (placeholder) → always visible.
       const allowedLayers = [...visibleLayers];
       const lineFilter: maplibregl.FilterSpecification = [
         "any",
@@ -265,6 +280,13 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
     setVisibleLayers(new Set());
   }, []);
 
+  const onApplyPreset = useCallback((presetKey: string) => {
+    const preset = ROLE_PRESETS.find((p) => p.key === presetKey);
+    if (!preset) return;
+    setVisibleLayers(new Set(preset.layers));
+    setVisibleCategories(new Set(preset.categories));
+  }, []);
+
   const onFlyToStage = useCallback(
     (ordinal: number) => {
       const map = mapRef.current;
@@ -290,6 +312,7 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
         onToggleCategory={onToggleCategory}
         onShowAll={onShowAll}
         onHideAll={onHideAll}
+        onApplyPreset={onApplyPreset}
         onFlyToStage={onFlyToStage}
       />
     </div>

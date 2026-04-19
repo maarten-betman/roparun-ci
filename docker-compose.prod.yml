@@ -71,9 +71,10 @@ services:
     expose:
       - "80"
     healthcheck:
-      # `--spider` avoids writing a response body; busybox wget returns
-      # non-zero on any HTTP status >= 400, which is what we want.
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost/"]
+      # Use 127.0.0.1 (not `localhost`) so busybox wget doesn't try ::1 first
+      # and get Connection Refused. `--spider` avoids writing a response body;
+      # busybox wget returns non-zero on HTTP status >= 400.
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
       interval: 10s
       timeout: 5s
       retries: 3

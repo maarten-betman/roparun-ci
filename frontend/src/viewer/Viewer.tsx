@@ -181,39 +181,64 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
         },
       });
 
-      // Emoji icon symbol layer for categories that have one (toilets,
-      // passages, checkpoints, handovers, hazards, water stops, sleeping).
-      // Placed above the circle layer so the glyph sits on top of the dot.
-      // Uses text-field with emoji so we don't need a sprite sheet; modern
-      // browsers render emoji as colour glyphs. Icons fade in above z9
-      // so they don't clutter the map at country level.
+      // Emoji icons on the map. MapLibre's `text-field` renders through the
+      // style's SDF font server, which doesn't include colour emoji glyphs —
+      // hence tofu boxes when we tried that. Workaround: rasterise each
+      // emoji to a canvas, register as a named image via `map.addImage`, and
+      // reference it via `icon-image` on a symbol layer.
+      const iconPx = 48; // source resolution; MapLibre scales via icon-size
+      const iconCanvas = document.createElement("canvas");
+      iconCanvas.width = iconPx;
+      iconCanvas.height = iconPx;
+      const iconCtx = iconCanvas.getContext("2d");
+      if (iconCtx) {
+        iconCtx.textAlign = "center";
+        iconCtx.textBaseline = "middle";
+        iconCtx.font = `${Math.floor(iconPx * 0.8)}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji","Twemoji Mozilla",sans-serif`;
+        for (const [key, meta] of Object.entries(WAYPOINT_CATEGORIES)) {
+          if (!meta.icon) continue;
+          const imgId = `cat-${key}`;
+          if (map.hasImage(imgId)) continue;
+          iconCtx.clearRect(0, 0, iconPx, iconPx);
+          iconCtx.fillText(meta.icon, iconPx / 2, iconPx / 2);
+          const data = iconCtx.getImageData(0, 0, iconPx, iconPx);
+          map.addImage(imgId, data, { pixelRatio: 2 });
+        }
+      }
+
+      // Symbol layer: maps each iconed category to its rasterised image name.
+      // Fallback is an empty string so unknown/trace features render nothing.
+      // We AND a "has icon" filter in the visibility effect so MapLibre
+      // doesn't even consider non-iconed features for this layer.
+      const iconMatch: string[] = [];
+      for (const [k, m] of Object.entries(WAYPOINT_CATEGORIES)) {
+        if (m.icon) {
+          iconMatch.push(k, `cat-${k}`);
+        }
+      }
+      const iconImageExpr = ["match", ["get", "category"], ...iconMatch, ""];
       map.addLayer({
         id: "waypoints-icon",
         type: "symbol",
         source: "waypoints",
         minzoom: 8,
         layout: {
-          "text-field": ["coalesce", ["get", "icon"], ""],
-          "text-size": [
+          "icon-image": iconImageExpr as unknown as maplibregl.ExpressionSpecification,
+          "icon-size": [
             "interpolate",
             ["linear"],
             ["zoom"],
             8,
-            10,
+            0.35,
             12,
-            14,
+            0.5,
             16,
-            18,
+            0.7,
           ],
-          "text-allow-overlap": false,
-          "text-ignore-placement": false,
-          "text-anchor": "center",
-          "text-offset": [0, 0],
+          "icon-allow-overlap": false,
+          "icon-ignore-placement": false,
+          "icon-anchor": "center",
           "symbol-sort-key": ["case", ["==", ["get", "style"], "trace"], 1, 0],
-        },
-        paint: {
-          "text-halo-color": "#ffffff",
-          "text-halo-width": 1,
         },
       });
 
@@ -295,7 +320,18 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
         map.setFilter("waypoints-circle", wpFilter as maplibregl.FilterSpecification);
       }
       if (map.getLayer("waypoints-icon")) {
-        map.setFilter("waypoints-icon", wpFilter as maplibregl.FilterSpecification);
+        // Only features whose category has an icon registered should hit
+        // this layer — prevents noisy "missing image" console warnings and
+        // saves MapLibre from iterating 20k+ trace features for nothing.
+        const iconedCats = Object.entries(WAYPOINT_CATEGORIES)
+          .filter(([, m]) => m.icon)
+          .map(([k]) => k)
+          .filter((k) => visibleCategories.has(k));
+        const iconFilter =
+          iconedCats.length === 0
+            ? ["==", ["literal", "__none__"], ["literal", "__match__"]]
+            : ["any", ...iconedCats.map((k) => ["==", ["get", "category"], k])];
+        map.setFilter("waypoints-icon", iconFilter as maplibregl.FilterSpecification);
       }
     };
     if (map.isStyleLoaded()) apply();

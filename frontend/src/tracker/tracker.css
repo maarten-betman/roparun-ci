@@ -1,0 +1,141 @@
+.tracker {
+  font-family: var(--font-ui, system-ui, sans-serif);
+  color: var(--fg-1, #111827);
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+.tracker h1 {
+  color: var(--color-roparun-blue, #0b3d91);
+  margin: 0 0 4px;
+  font-size: 20px;
+}
+
+.tracker__lede {
+  color: var(--fg-2, #6b7280);
+  font-size: 13px;
+  margin: 0 0 4px;
+}
+
+.tracker__identity {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--bg-2, #f3f4f6);
+  border-radius: var(--radius-lg, 8px);
+  font-size: 14px;
+}
+
+.tracker__unpair {
+  background: transparent;
+  border: 0;
+  color: var(--color-roparun-blue, #0b3d91);
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.tracker__unpair:hover {
+  text-decoration: underline;
+}
+
+.tracker__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tracker__field span {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-2, #6b7280);
+}
+.tracker__field input,
+.tracker__field select {
+  padding: 10px 12px;
+  font-size: 16px; /* >=16 to prevent iOS auto-zoom */
+  font-family: inherit;
+  border: 1px solid var(--border-1, #e5e7eb);
+  border-radius: var(--radius-md, 6px);
+  background: var(--bg-1, #fff);
+}
+
+.tracker__advanced {
+  font-size: 13px;
+  padding: 8px 0;
+}
+.tracker__advanced summary {
+  color: var(--fg-2, #6b7280);
+  cursor: pointer;
+  padding: 4px 0;
+}
+.tracker__advanced .tracker__field {
+  margin-top: 8px;
+}
+
+.tracker__cta {
+  background: var(--color-roparun-blue, #0b3d91);
+  color: #fff;
+  border: 0;
+  padding: 14px 16px;
+  border-radius: var(--radius-lg, 8px);
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+.tracker__cta[disabled] {
+  background: var(--fg-3, #9ca3af);
+  cursor: default;
+}
+.tracker__cta--stop {
+  background: var(--color-forbidden, #dc2626);
+}
+
+.tracker__error {
+  background: var(--error-bg, #fee2e2);
+  color: var(--error-fg, #991b1b);
+  padding: 10px;
+  border-radius: var(--radius-md, 6px);
+  font-size: 13px;
+}
+
+.tracker__stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 0;
+  padding: 10px;
+  background: var(--bg-2, #f3f4f6);
+  border-radius: var(--radius-lg, 8px);
+}
+.tracker__stats > div {
+  text-align: center;
+}
+.tracker__stats dt {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--fg-2, #6b7280);
+  letter-spacing: 0.04em;
+}
+.tracker__stats dd {
+  margin: 2px 0 0;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.tracker__dump {
+  background: var(--bg-2, #f3f4f6);
+  padding: 12px;
+  border-radius: var(--radius-lg, 8px);
+  overflow: auto;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  margin: 0;
+}

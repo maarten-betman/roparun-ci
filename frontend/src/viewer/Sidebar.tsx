@@ -7,6 +7,14 @@ import {
   categoryLabel,
 } from "./catalog";
 
+export interface SidebarLiveDevice {
+  id: string;
+  name: string;
+  role: string;
+  battery_pct: number | null;
+  stale: boolean;
+}
+
 export interface SidebarProps {
   detail: RouteDetail | null;
   notFound: boolean;
@@ -19,6 +27,8 @@ export interface SidebarProps {
   onHideAll: () => void;
   onApplyPreset: (presetKey: string) => void;
   onFlyToStage?: (ordinal: number) => void;
+  liveDevices?: SidebarLiveDevice[];
+  onFlyToDevice?: (deviceId: string) => void;
 }
 
 function fmtKm(meters: number | null | undefined): string {
@@ -46,6 +56,8 @@ export function Sidebar({
   onHideAll,
   onApplyPreset,
   onFlyToStage,
+  liveDevices,
+  onFlyToDevice,
 }: SidebarProps) {
   const [open, setOpen] = useState(false); // mobile drawer state
 
@@ -150,6 +162,41 @@ export function Sidebar({
                 })}
               </div>
             </section>
+
+            {liveDevices && liveDevices.length > 0 && (
+              <section className="sidebar__section">
+                <h3>Live ({liveDevices.length})</h3>
+                <ul className="sidebar__list">
+                  {liveDevices.map((d) => (
+                    <li key={d.id} className="sidebar__row">
+                      <label className="sidebar__check">
+                        <span
+                          className={`sidebar__livedot ${d.stale ? "sidebar__livedot--stale" : ""}`}
+                          aria-hidden
+                        />
+                        <span className="sidebar__rowtext">
+                          {d.name}{" "}
+                          <span className="sidebar__rowmeta">
+                            · {d.role}
+                            {d.battery_pct != null ? ` · 🔋 ${Math.round(d.battery_pct)}%` : ""}
+                          </span>
+                        </span>
+                      </label>
+                      {onFlyToDevice && (
+                        <button
+                          type="button"
+                          className="sidebar__zoom"
+                          onClick={() => onFlyToDevice(d.id)}
+                          title="Fly to device"
+                        >
+                          ↗
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
 
             <section className="sidebar__section">
               <h3>Tracks</h3>

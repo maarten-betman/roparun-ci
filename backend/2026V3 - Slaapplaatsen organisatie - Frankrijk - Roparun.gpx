@@ -1,0 +1,9 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<gpx xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd" version="1.1" creator="Roparun" xmlns="http://www.topografix.com/GPX/1/1">
+  <wpt lat="50.474089485966637" lon="3.669871932419702">
+    <name>Slaapplek Preau (OffRoute)</name>
+  </wpt>
+  <wpt lat="51.583072434120851" lon="4.5806727659579316">
+    <name>Slaapplek Hoeven (OffRoute)</name>
+  </wpt>
+</gpx>

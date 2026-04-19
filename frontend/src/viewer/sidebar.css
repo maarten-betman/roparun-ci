@@ -162,6 +162,25 @@
   line-height: 1;
   flex: 0 0 auto;
 }
+
+.sidebar__livedot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--action-bg, #2a9d8f);
+  flex: 0 0 auto;
+  box-shadow: 0 0 0 3px rgba(42, 157, 143, 0.2);
+  animation: livepulse 1.6s ease-in-out infinite;
+}
+.sidebar__livedot--stale {
+  background: var(--fg-3, #9ca3af);
+  box-shadow: none;
+  animation: none;
+}
+@keyframes livepulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(42, 157, 143, 0.2); }
+  50%      { box-shadow: 0 0 0 6px rgba(42, 157, 143, 0.0); }
+}
 .sidebar__rowtext {
   flex: 1;
   overflow: hidden;

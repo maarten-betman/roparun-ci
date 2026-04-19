@@ -27,6 +27,12 @@ seed:
 load-roparun-2026:
 	docker compose exec api python -m app.scripts.load_roparun_2026
 
+simulate:
+	@test -n "$(gpx)" && test -n "$(token)" \
+		|| (echo "usage: make simulate gpx=<path.gpx> token=<bearer> [speed=60]" && exit 1)
+	docker compose exec api python -m app.scripts.simulate_tracker \
+		--gpx "$(gpx)" --token "$(token)" --speed $${speed:-60}
+
 test: backend-test frontend-test
 
 backend-test:

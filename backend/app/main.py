@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
-from .routers import events, health, public, routes, teams
+from .routers import devices, events, health, ingest, live, public, routes, teams
 
 
 @asynccontextmanager
@@ -28,6 +28,9 @@ def create_app() -> FastAPI:
     app.include_router(events.router)
     app.include_router(routes.router)
     app.include_router(public.router)
+    app.include_router(devices.router)
+    app.include_router(ingest.router)
+    app.include_router(live.router)
     return app
 
 

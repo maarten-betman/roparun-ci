@@ -69,5 +69,8 @@ async def client(_configure_env: None) -> AsyncIterator[AsyncClient]:
 
     async with engine.begin() as conn:
         await conn.execute(
-            text("TRUNCATE waypoint, stage, route, event, team RESTART IDENTITY CASCADE")
+            text(
+                "TRUNCATE position, device, waypoint, stage, route, event, team "
+                "RESTART IDENTITY CASCADE"
+            )
         )

@@ -5,6 +5,7 @@ import type { RouteDetail, Stage, Waypoint, WaypointKind } from "../api/types";
 import { TopBar, TopBarButton } from "../chrome/TopBar";
 import { DEFAULT_CENTER, DEFAULT_ZOOM, mapStyle } from "../map/style";
 import { Sidebar } from "./Sidebar";
+import { useLivePositions, type LiveDevice } from "./useLivePositions";
 import {
   ROLE_PRESETS,
   WAYPOINT_CATEGORIES,
@@ -26,6 +27,56 @@ const KIND_FALLBACK: Record<WaypointKind, string> = {
   hazard: "#dc2626",
   poi: DEFAULT_WP_COLOR,
 };
+
+const ROLE_COLOR: Record<string, string> = {
+  runner: "#eab308", // yellow — matches the runners track
+  cyclist: "#f97316",
+  driver: "#0b3d91",
+  medic: "#dc2626",
+  other: "#6b7280",
+};
+
+function liveMarkersFC(devices: LiveDevice[]): GeoJSON.FeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: devices.map((d) => ({
+      type: "Feature",
+      properties: {
+        id: d.id,
+        name: d.name,
+        role: d.role,
+        color: ROLE_COLOR[d.role] ?? ROLE_COLOR.other,
+        battery: d.last.battery_pct ?? null,
+      },
+      geometry: {
+        type: "Point",
+        coordinates: [d.last.lng, d.last.lat],
+      },
+    })),
+  };
+}
+
+function liveTrailsFC(devices: LiveDevice[]): GeoJSON.FeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: devices
+      .filter((d) => d.breadcrumb.length >= 2)
+      .map((d) => ({
+        type: "Feature",
+        properties: {
+          id: d.id,
+          color: ROLE_COLOR[d.role] ?? ROLE_COLOR.other,
+        },
+        geometry: {
+          type: "LineString",
+          coordinates: d.breadcrumb
+            .slice()
+            .reverse() // map layer wants oldest→newest
+            .map((p) => [p.lng, p.lat]),
+        },
+      })),
+  };
+}
 
 const FALLBACK_ROUTE: GeoJSON.Feature<GeoJSON.LineString> = {
   type: "Feature",
@@ -97,6 +148,8 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
   const [visibleCategories, setVisibleCategories] = useState<Set<string>>(() =>
     defaultVisibleCategories(),
   );
+
+  const liveDevices = useLivePositions(publicPath);
 
   // Fetch the route detail.
   useEffect(() => {
@@ -250,6 +303,66 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
         },
       });
 
+      // Live tracking: trailing breadcrumb line + current marker per device.
+      // Kept above everything else so live positions are always visible.
+      map.addSource("live-trails", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      map.addLayer({
+        id: "live-trails-line",
+        type: "line",
+        source: "live-trails",
+        paint: {
+          "line-color": ["coalesce", ["get", "color"], "#6b7280"],
+          "line-width": 3,
+          "line-opacity": 0.75,
+        },
+      });
+      map.addSource("live-markers", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      map.addLayer({
+        id: "live-markers-pulse",
+        type: "circle",
+        source: "live-markers",
+        paint: {
+          "circle-radius": 14,
+          "circle-color": ["coalesce", ["get", "color"], "#6b7280"],
+          "circle-opacity": 0.25,
+        },
+      });
+      map.addLayer({
+        id: "live-markers-core",
+        type: "circle",
+        source: "live-markers",
+        paint: {
+          "circle-radius": 7,
+          "circle-color": ["coalesce", ["get", "color"], "#6b7280"],
+          "circle-stroke-width": 2,
+          "circle-stroke-color": "#ffffff",
+        },
+      });
+      map.addLayer({
+        id: "live-markers-label",
+        type: "symbol",
+        source: "live-markers",
+        layout: {
+          "text-field": ["get", "name"],
+          "text-font": ["Open Sans Semibold", "Arial Unicode MS Regular"],
+          "text-size": 12,
+          "text-offset": [0, 1.2],
+          "text-anchor": "top",
+          "text-allow-overlap": false,
+        },
+        paint: {
+          "text-color": "#111827",
+          "text-halo-color": "#ffffff",
+          "text-halo-width": 2,
+        },
+      });
+
       map.on("mouseenter", "waypoints-circle", (e) => {
         const f = e.features?.[0];
         if (!f) return;
@@ -295,6 +408,22 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
     if (map.isStyleLoaded()) apply();
     else map.once("load", apply);
   }, [detail]);
+
+  // Push live devices into the dedicated map sources on every update.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const apply = () => {
+      (map.getSource("live-markers") as maplibregl.GeoJSONSource | undefined)?.setData(
+        liveMarkersFC(liveDevices),
+      );
+      (map.getSource("live-trails") as maplibregl.GeoJSONSource | undefined)?.setData(
+        liveTrailsFC(liveDevices),
+      );
+    };
+    if (map.isStyleLoaded()) apply();
+    else map.once("load", apply);
+  }, [liveDevices]);
 
   // Apply layer/category filters whenever the visibility sets change.
   useEffect(() => {
@@ -387,6 +516,28 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
     setVisibleCategories(new Set(preset.categories));
   }, []);
 
+  const onFlyToDevice = useCallback(
+    (deviceId: string) => {
+      const map = mapRef.current;
+      const dev = liveDevices.find((d) => d.id === deviceId);
+      if (!map || !dev) return;
+      map.flyTo({ center: [dev.last.lng, dev.last.lat], zoom: 14, duration: 600 });
+    },
+    [liveDevices],
+  );
+
+  const sidebarLive = useMemo(() => {
+    const now = Date.now();
+    return liveDevices.map((d) => ({
+      id: d.id,
+      name: d.name,
+      role: d.role,
+      battery_pct: d.last.battery_pct,
+      // Treat a device as stale if its latest fix is older than 60s.
+      stale: now - new Date(d.last.ts).getTime() > 60000,
+    }));
+  }, [liveDevices]);
+
   const onFlyToStage = useCallback(
     (ordinal: number) => {
       const map = mapRef.current;
@@ -448,6 +599,8 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
         onHideAll={onHideAll}
         onApplyPreset={onApplyPreset}
         onFlyToStage={onFlyToStage}
+        liveDevices={sidebarLive}
+        onFlyToDevice={onFlyToDevice}
       />
     </div>
   );

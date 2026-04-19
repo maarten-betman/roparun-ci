@@ -53,10 +53,14 @@ services:
     depends_on:
       api:
         condition: service_started
-    ports:
+    # Coolify's Traefik discovers the service via Docker labels + the compose
+    # network and terminates TLS upstream. `expose:` (internal-only) is what
+    # Coolify expects; switching to `ports:` made Coolify skip Traefik routing
+    # for this service, so no ACME cert was issued. If you're running this
+    # compose file *without* Coolify, replace `expose:` with
+    # `ports: ["80:80"]` to publish to the host.
+    expose:
       - "80"
-    # Coolify reads the EXPOSE / container port and routes through its own
-    # proxy; the host-side binding above is kept unbound so Coolify can map it.
 
 volumes:
   db_data:

@@ -58,6 +58,16 @@ describe("catalog lookups", () => {
     expect(categoryStyle(null)).toBe("marker");
     expect(categoryStyle("unknown_slug")).toBe("marker");
   });
+
+  it("attaches icons to the operationally-critical categories", () => {
+    expect(WAYPOINT_CATEGORIES.toilets.icon).toBeTruthy();
+    expect(WAYPOINT_CATEGORIES.passages.icon).toBeTruthy();
+    expect(WAYPOINT_CATEGORIES.checkpoints.icon).toBeTruthy();
+    expect(WAYPOINT_CATEGORIES.handovers.icon).toBeTruthy();
+    // Trace overlays should NOT have icons (they're rendered as dots).
+    expect(WAYPOINT_CATEGORIES.vehicle_a_allowed.icon).toBeUndefined();
+    expect(WAYPOINT_CATEGORIES.runner_route_points.icon).toBeUndefined();
+  });
 });
 
 describe("role presets", () => {

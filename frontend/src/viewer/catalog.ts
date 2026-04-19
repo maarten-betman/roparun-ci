@@ -25,6 +25,9 @@ export interface CategoryMeta {
   color: string;
   style: WaypointStyle;
   visible: boolean;
+  /** Optional emoji glyph rendered over the marker via a symbol layer.
+   *  Only set for categories where a glyph helps readability. */
+  icon?: string;
 }
 
 export interface LayerMeta {
@@ -47,10 +50,34 @@ export const STAGE_LAYERS: Record<string, LayerMeta> = {
 
 export const WAYPOINT_CATEGORIES: Record<string, CategoryMeta> = {
   // Operational POIs — on by default, marker style.
-  checkpoints: { label: "Checkpoints (CP)", color: "#0b3d91", style: "marker", visible: true },
-  handovers: { label: "Wisselplaatsen", color: "#f4a261", style: "marker", visible: true },
-  passages: { label: "Doorkomsten", color: "#3b82f6", style: "marker", visible: true },
-  hazards: { label: "Gevaarlijke punten", color: FORBIDDEN_RED, style: "marker", visible: true },
+  checkpoints: {
+    label: "Checkpoints (CP)",
+    color: "#0b3d91",
+    style: "marker",
+    visible: true,
+    icon: "🏁",
+  },
+  handovers: {
+    label: "Wisselplaatsen",
+    color: "#f4a261",
+    style: "marker",
+    visible: true,
+    icon: "🔁",
+  },
+  passages: {
+    label: "Doorkomsten",
+    color: "#3b82f6",
+    style: "marker",
+    visible: true,
+    icon: "🎉",
+  },
+  hazards: {
+    label: "Gevaarlijke punten",
+    color: FORBIDDEN_RED,
+    style: "marker",
+    visible: true,
+    icon: "⚠️",
+  },
   unpaved_announcements: {
     label: "Onverhard",
     color: "#b45309",
@@ -62,9 +89,22 @@ export const WAYPOINT_CATEGORIES: Record<string, CategoryMeta> = {
     color: VEHICLE_C_CYAN,
     style: "marker",
     visible: true,
+    icon: "💧",
   },
-  toilets: { label: "Toiletten", color: "#7c3aed", style: "marker", visible: true },
-  sleeping_org: { label: "Slaapplaatsen org.", color: "#2a9d8f", style: "marker", visible: true },
+  toilets: {
+    label: "Toiletten",
+    color: "#7c3aed",
+    style: "marker",
+    visible: true,
+    icon: "🚻",
+  },
+  sleeping_org: {
+    label: "Slaapplaatsen org.",
+    color: "#2a9d8f",
+    style: "marker",
+    visible: true,
+    icon: "🛏️",
+  },
   km_markers: { label: "KM-punten", color: "#9ca3af", style: "marker", visible: false },
   merges_runners_vans: {
     label: "Samenvoegingen lopers/busjes",

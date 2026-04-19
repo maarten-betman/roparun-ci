@@ -59,18 +59,24 @@ function stageFC(stages: Stage[]): GeoJSON.FeatureCollection {
 function waypointFC(wps: Waypoint[]): GeoJSON.FeatureCollection {
   return {
     type: "FeatureCollection",
-    features: wps.map((w) => ({
-      type: "Feature",
-      properties: {
-        kind: w.kind,
-        category: w.category ?? "",
-        categoryLabel: WAYPOINT_CATEGORIES[w.category ?? ""]?.label ?? w.category ?? w.kind,
-        style: categoryStyle(w.category),
-        name: w.name ?? "",
-        color: categoryColor(w.category, KIND_FALLBACK[w.kind]),
-      },
-      geometry: w.geom,
-    })),
+    features: wps.map((w) => {
+      const meta = WAYPOINT_CATEGORIES[w.category ?? ""];
+      return {
+        type: "Feature",
+        properties: {
+          kind: w.kind,
+          category: w.category ?? "",
+          categoryLabel: meta?.label ?? w.category ?? w.kind,
+          style: categoryStyle(w.category),
+          name: w.name ?? "",
+          color: categoryColor(w.category, KIND_FALLBACK[w.kind]),
+          // Emoji glyph, or empty string so the symbol layer's text-field
+          // simply renders nothing for categories without an icon.
+          icon: meta?.icon ?? "",
+        },
+        geometry: w.geom,
+      };
+    }),
   };
 }
 
@@ -175,6 +181,42 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
         },
       });
 
+      // Emoji icon symbol layer for categories that have one (toilets,
+      // passages, checkpoints, handovers, hazards, water stops, sleeping).
+      // Placed above the circle layer so the glyph sits on top of the dot.
+      // Uses text-field with emoji so we don't need a sprite sheet; modern
+      // browsers render emoji as colour glyphs. Icons fade in above z9
+      // so they don't clutter the map at country level.
+      map.addLayer({
+        id: "waypoints-icon",
+        type: "symbol",
+        source: "waypoints",
+        minzoom: 8,
+        layout: {
+          "text-field": ["coalesce", ["get", "icon"], ""],
+          "text-size": [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            8,
+            10,
+            12,
+            14,
+            16,
+            18,
+          ],
+          "text-allow-overlap": false,
+          "text-ignore-placement": false,
+          "text-anchor": "center",
+          "text-offset": [0, 0],
+          "symbol-sort-key": ["case", ["==", ["get", "style"], "trace"], 1, 0],
+        },
+        paint: {
+          "text-halo-color": "#ffffff",
+          "text-halo-width": 1,
+        },
+      });
+
       map.on("mouseenter", "waypoints-circle", (e) => {
         const f = e.features?.[0];
         if (!f) return;
@@ -226,21 +268,28 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
     const map = mapRef.current;
     if (!map) return;
     const apply = () => {
+      // `match` with a literal array of labels evaluates reliably across all
+      // MapLibre versions (some build of the `in` expression were returning
+      // false on every feature, hiding all waypoints). Empty list → no
+      // features match, which is what "Hide all" asks for.
       const allowedLayers = [...visibleLayers];
-      const lineFilter: maplibregl.FilterSpecification = [
-        "any",
-        ["==", ["get", "layer"], ""],
-        ["in", ["get", "layer"], ["literal", allowedLayers]],
-      ];
+      const lineFilter: maplibregl.FilterSpecification =
+        allowedLayers.length === 0
+          ? ["==", ["get", "layer"], ""]
+          : [
+              "any",
+              ["==", ["get", "layer"], ""],
+              ["match", ["get", "layer"], allowedLayers, true, false],
+            ];
       if (map.getLayer("route-line")) map.setFilter("route-line", lineFilter);
 
       const allowedCats = [...visibleCategories];
-      const wpFilter: maplibregl.FilterSpecification = [
-        "in",
-        ["get", "category"],
-        ["literal", allowedCats],
-      ];
+      const wpFilter: maplibregl.FilterSpecification =
+        allowedCats.length === 0
+          ? ["boolean", false]
+          : ["match", ["get", "category"], allowedCats, true, false];
       if (map.getLayer("waypoints-circle")) map.setFilter("waypoints-circle", wpFilter);
+      if (map.getLayer("waypoints-icon")) map.setFilter("waypoints-icon", wpFilter);
     };
     if (map.isStyleLoaded()) apply();
     else map.once("load", apply);

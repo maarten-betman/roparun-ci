@@ -1,29 +1,32 @@
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RouteDetail, Stage, Waypoint, WaypointKind } from "../api/types";
 import { DEFAULT_CENTER, DEFAULT_ZOOM, mapStyle } from "../map/style";
-
-// Per-layer stage color. Keys match the `layer` values written by
-// backend/app/scripts/load_roparun_2026.py; anything else falls back to red.
-const LAYER_COLORS: Record<string, string> = {
-  runners: "#e63946",
-  vehicle_b: "#0b3d91",
-};
+import { Sidebar } from "./Sidebar";
+import {
+  WAYPOINT_CATEGORIES,
+  categoryColor,
+  defaultVisibleCategories,
+  defaultVisibleLayers,
+  layerColor,
+} from "./catalog";
+import "./sidebar.css";
 
 const DEFAULT_STAGE_COLOR = "#e63946";
+const DEFAULT_WP_COLOR = "#6b7280";
 
-const KIND_COLORS: Record<WaypointKind, string> = {
+const KIND_FALLBACK: Record<WaypointKind, string> = {
   handover: "#f4a261",
   rest: "#2a9d8f",
   checkpoint: "#0b3d91",
   hazard: "#d62828",
-  poi: "#6b7280",
+  poi: DEFAULT_WP_COLOR,
 };
 
 const FALLBACK_ROUTE: GeoJSON.Feature<GeoJSON.LineString> = {
   type: "Feature",
-  properties: { name: "Placeholder Paris → Rotterdam", color: DEFAULT_STAGE_COLOR },
+  properties: { name: "Placeholder Paris → Rotterdam", color: DEFAULT_STAGE_COLOR, layer: "" },
   geometry: {
     type: "LineString",
     coordinates: [
@@ -44,7 +47,7 @@ function stageFC(stages: Stage[]): GeoJSON.FeatureCollection {
         ordinal: s.ordinal,
         name: s.name ?? "",
         layer: s.layer ?? "",
-        color: (s.layer && LAYER_COLORS[s.layer]) || DEFAULT_STAGE_COLOR,
+        color: layerColor(s.layer, DEFAULT_STAGE_COLOR),
       },
       geometry: s.geom,
     })),
@@ -59,8 +62,9 @@ function waypointFC(wps: Waypoint[]): GeoJSON.FeatureCollection {
       properties: {
         kind: w.kind,
         category: w.category ?? "",
+        categoryLabel: WAYPOINT_CATEGORIES[w.category ?? ""]?.label ?? w.category ?? w.kind,
         name: w.name ?? "",
-        color: KIND_COLORS[w.kind] ?? KIND_COLORS.poi,
+        color: categoryColor(w.category, KIND_FALLBACK[w.kind]),
       },
       geometry: w.geom,
     })),
@@ -78,9 +82,17 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
   const mapRef = useRef<maplibregl.Map | null>(null);
   const [detail, setDetail] = useState<RouteDetail | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [visibleLayers, setVisibleLayers] = useState<Set<string>>(() => defaultVisibleLayers());
+  const [visibleCategories, setVisibleCategories] = useState<Set<string>>(() =>
+    defaultVisibleCategories(),
+  );
 
+  // Fetch the route detail.
   useEffect(() => {
     if (!publicPath) return;
+    setLoading(true);
+    setNotFound(false);
     const base = (import.meta.env.VITE_API_BASE as string | undefined) ?? "/api";
     fetch(`${base}/public/${publicPath}`)
       .then((r) => {
@@ -92,9 +104,11 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
         return r.json() as Promise<RouteDetail>;
       })
       .then((d) => d && setDetail(d))
-      .catch(() => setNotFound(true));
+      .catch(() => setNotFound(true))
+      .finally(() => setLoading(false));
   }, [publicPath]);
 
+  // Mount the map exactly once.
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     const map = new maplibregl.Map({
@@ -135,7 +149,6 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
             "interpolate",
             ["linear"],
             ["zoom"],
-            // Keep markers tiny at country level so 20k points don't soup the map.
             6,
             2,
             10,
@@ -143,20 +156,22 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
             14,
             7,
           ],
-          "circle-color": ["coalesce", ["get", "color"], KIND_COLORS.poi],
+          "circle-color": ["coalesce", ["get", "color"], DEFAULT_WP_COLOR],
           "circle-stroke-width": 1,
           "circle-stroke-color": "#ffffff",
         },
       });
 
-      // Hover name popups on waypoints.
       map.on("mouseenter", "waypoints-circle", (e) => {
         const f = e.features?.[0];
         if (!f) return;
         map.getCanvas().style.cursor = "pointer";
-        const name = (f.properties?.name as string | undefined) || "Point";
+        const props = f.properties ?? {};
+        const name = (props.name as string) || "Point";
+        const cat = (props.categoryLabel as string) || "";
+        const html = cat ? `<strong>${name}</strong><br>${cat}` : `<strong>${name}</strong>`;
         const geom = f.geometry as GeoJSON.Point;
-        popup.setLngLat(geom.coordinates as [number, number]).setText(name).addTo(map);
+        popup.setLngLat(geom.coordinates as [number, number]).setHTML(html).addTo(map);
       });
       map.on("mouseleave", "waypoints-circle", () => {
         map.getCanvas().style.cursor = "";
@@ -171,6 +186,7 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
     };
   }, [apiKey]);
 
+  // Push detail → map sources + initial fit.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !detail) return;
@@ -189,66 +205,93 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
     else map.once("load", apply);
   }, [detail]);
 
-  const layerSummary = useMemo(() => {
-    if (!detail) return null;
-    const stageCounts = new Map<string, number>();
-    for (const s of detail.stages) {
-      const key = s.layer ?? "other";
-      stageCounts.set(key, (stageCounts.get(key) ?? 0) + 1);
-    }
-    const wpCounts = new Map<string, number>();
-    for (const w of detail.waypoints) {
-      const key = w.category ?? w.kind;
-      wpCounts.set(key, (wpCounts.get(key) ?? 0) + 1);
-    }
-    return { stageCounts, wpCounts };
-  }, [detail]);
+  // Apply layer/category filters whenever the visibility sets change.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const apply = () => {
+      // Lines: only show stages whose layer is visible. Empty layer (placeholder) → always visible.
+      const allowedLayers = [...visibleLayers];
+      const lineFilter: maplibregl.FilterSpecification = [
+        "any",
+        ["==", ["get", "layer"], ""],
+        ["in", ["get", "layer"], ["literal", allowedLayers]],
+      ];
+      if (map.getLayer("route-line")) map.setFilter("route-line", lineFilter);
+
+      const allowedCats = [...visibleCategories];
+      const wpFilter: maplibregl.FilterSpecification = [
+        "in",
+        ["get", "category"],
+        ["literal", allowedCats],
+      ];
+      if (map.getLayer("waypoints-circle")) map.setFilter("waypoints-circle", wpFilter);
+    };
+    if (map.isStyleLoaded()) apply();
+    else map.once("load", apply);
+  }, [visibleLayers, visibleCategories]);
+
+  const toggle = useCallback((set: Set<string>, key: string): Set<string> => {
+    const next = new Set(set);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    return next;
+  }, []);
+
+  const onToggleLayer = useCallback(
+    (k: string) => setVisibleLayers((s) => toggle(s, k)),
+    [toggle],
+  );
+  const onToggleCategory = useCallback(
+    (k: string) => setVisibleCategories((s) => toggle(s, k)),
+    [toggle],
+  );
+
+  const allCategories = useMemo(
+    () => new Set(detail ? detail.waypoints.map((w) => w.category ?? w.kind) : []),
+    [detail],
+  );
+  const allLayers = useMemo(
+    () => new Set(detail ? detail.stages.map((s) => s.layer ?? "other") : []),
+    [detail],
+  );
+
+  const onShowAll = useCallback(() => {
+    setVisibleCategories(new Set(allCategories));
+    setVisibleLayers(new Set(allLayers));
+  }, [allCategories, allLayers]);
+  const onHideAll = useCallback(() => {
+    setVisibleCategories(new Set());
+    setVisibleLayers(new Set());
+  }, []);
+
+  const onFlyToStage = useCallback(
+    (ordinal: number) => {
+      const map = mapRef.current;
+      const stage = detail?.stages.find((s) => s.ordinal === ordinal);
+      if (!map || !stage) return;
+      const bounds = new maplibregl.LngLatBounds();
+      for (const c of stage.geom.coordinates) bounds.extend(c);
+      if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 40, duration: 600 });
+    },
+    [detail],
+  );
 
   return (
     <div style={{ position: "fixed", inset: 0 }}>
       <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />
-      <div
-        style={{
-          position: "absolute",
-          top: 16,
-          left: 16,
-          background: "rgba(11, 61, 145, 0.92)",
-          color: "white",
-          padding: "12px 16px",
-          borderRadius: 8,
-          fontFamily: "system-ui, sans-serif",
-          zIndex: 1,
-          maxWidth: 320,
-        }}
-      >
-        <strong>Roparun · Route viewer</strong>
-        <div style={{ fontSize: 12, opacity: 0.85 }}>
-          {detail
-            ? `${detail.name} · ${detail.stages.length} stages · ${detail.waypoints.length} POIs`
-            : notFound
-              ? "No published route for this team/year"
-              : publicPath
-                ? "Loading…"
-                : "Placeholder Paris → Rotterdam"}
-        </div>
-        {layerSummary && layerSummary.wpCounts.size > 0 && (
-          <details style={{ marginTop: 8, fontSize: 11, opacity: 0.85 }}>
-            <summary style={{ cursor: "pointer" }}>Layers</summary>
-            <ul style={{ margin: "6px 0 0 16px", padding: 0 }}>
-              {[...layerSummary.stageCounts].map(([k, n]) => (
-                <li key={`s-${k}`}>
-                  {k} · {n} stage{n !== 1 ? "s" : ""}
-                </li>
-              ))}
-              {[...layerSummary.wpCounts].map(([k, n]) => (
-                <li key={`w-${k}`}>
-                  {k} · {n}
-                </li>
-              ))}
-            </ul>
-          </details>
-        )}
-      </div>
+      <Sidebar
+        detail={detail}
+        notFound={notFound}
+        loading={loading}
+        visibleLayers={visibleLayers}
+        visibleCategories={visibleCategories}
+        onToggleLayer={onToggleLayer}
+        onToggleCategory={onToggleCategory}
+        onShowAll={onShowAll}
+        onHideAll={onHideAll}
+        onFlyToStage={onFlyToStage}
+      />
     </div>
   );
 }

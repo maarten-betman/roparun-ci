@@ -154,15 +154,22 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
         type: "circle",
         source: "waypoints",
         paint: {
-          // Two looks in one layer: trace categories (vehicle road overlays) get
-          // small, tightly-packed dots that visually read as a coloured line;
-          // marker categories (CPs, handovers, etc.) get bigger circles with
-          // a white stroke for legibility.
+          // Two looks in one layer: trace categories (vehicle road overlays)
+          // get small, tightly-packed dots that visually read as a coloured
+          // line; marker categories (CPs, handovers, etc.) get bigger circles
+          // with a white stroke for legibility. MapLibre forbids nesting a
+          // zoom-based `interpolate` inside a `case`, so the zoom interpolation
+          // is the outer expression and each stop's output branches on style.
           "circle-radius": [
-            "case",
-            ["==", ["get", "style"], "trace"],
-            ["interpolate", ["linear"], ["zoom"], 6, 1, 10, 2, 14, 3.5],
-            ["interpolate", ["linear"], ["zoom"], 6, 2, 10, 4, 14, 7],
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            6,
+            ["case", ["==", ["get", "style"], "trace"], 1, 2],
+            10,
+            ["case", ["==", ["get", "style"], "trace"], 2, 4],
+            14,
+            ["case", ["==", ["get", "style"], "trace"], 3.5, 7],
           ],
           "circle-color": ["coalesce", ["get", "color"], DEFAULT_WP_COLOR],
           "circle-stroke-width": [

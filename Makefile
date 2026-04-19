@@ -24,6 +24,9 @@ revision:
 seed:
 	docker compose exec api python -m app.scripts.seed
 
+load-roparun-2026:
+	docker compose exec api python -m app.scripts.load_roparun_2026
+
 test: backend-test frontend-test
 
 backend-test:

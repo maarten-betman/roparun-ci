@@ -162,6 +162,7 @@ export function Planner({ apiKey }: PlannerProps) {
           planned_start_at: s.planned_start_at,
           planned_duration_s: s.planned_duration_s,
           assigned_runner: s.assigned_runner,
+          layer: s.layer,
         })),
         waypoints: detail.waypoints.map((w) => ({
           kind: w.kind,
@@ -169,6 +170,7 @@ export function Planner({ apiKey }: PlannerProps) {
           geom: w.geom,
           planned_at: w.planned_at,
           notes: w.notes,
+          category: w.category,
         })),
       });
       setDetail(d);

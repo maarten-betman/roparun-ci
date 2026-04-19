@@ -36,3 +36,6 @@ class Waypoint(UUIDPk, Timestamped, Base):
     )
     planned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     notes: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    # Source-file sub-type (e.g. "checkpoints", "km_markers", "water_stops").
+    # `kind` stays as the broad enum for styling, `category` is fine-grained.
+    category: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)

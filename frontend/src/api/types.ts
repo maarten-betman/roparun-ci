@@ -23,6 +23,7 @@ export interface Stage {
   planned_start_at: string | null;
   planned_duration_s: number | null;
   assigned_runner: string | null;
+  layer: string | null;
 }
 
 export interface Waypoint {
@@ -32,6 +33,7 @@ export interface Waypoint {
   geom: Point;
   planned_at: string | null;
   notes: string | null;
+  category: string | null;
 }
 
 export interface RouteSummary {
@@ -70,6 +72,7 @@ export interface StageInput {
   planned_start_at?: string | null;
   planned_duration_s?: number | null;
   assigned_runner?: string | null;
+  layer?: string | null;
 }
 
 export interface WaypointInput {
@@ -78,6 +81,7 @@ export interface WaypointInput {
   geom: Point;
   planned_at?: string | null;
   notes?: string | null;
+  category?: string | null;
 }
 
 export interface RouteReplaceInput {

@@ -31,3 +31,6 @@ class Stage(UUIDPk, Timestamped, Base):
     )
     planned_duration_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
     assigned_runner: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Overlay group: "runners", "vehicle_b", etc. Lets one route carry
+    # multiple parallel tracks that render as distinct layers on the map.
+    layer: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)

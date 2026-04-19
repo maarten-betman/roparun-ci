@@ -46,6 +46,7 @@ async def load_route_detail(session: AsyncSession, route: Route) -> RouteDetail:
                 planned_start_at=stage.planned_start_at,
                 planned_duration_s=stage.planned_duration_s,
                 assigned_runner=stage.assigned_runner,
+                layer=stage.layer,
             )
         )
 
@@ -57,6 +58,7 @@ async def load_route_detail(session: AsyncSession, route: Route) -> RouteDetail:
             geom=to_point(w.geom),
             planned_at=w.planned_at,
             notes=w.notes,
+            category=w.category,
         )
         for w in wp_rows
     ]
@@ -101,6 +103,7 @@ def _stage_from_payload(route_id: uuid.UUID, s: StageIn) -> Stage:
         planned_start_at=s.planned_start_at,
         planned_duration_s=s.planned_duration_s,
         assigned_runner=s.assigned_runner,
+        layer=s.layer,
     )
 
 
@@ -112,4 +115,5 @@ def _waypoint_from_payload(route_id: uuid.UUID, w: WaypointIn) -> Waypoint:
         geom=point_to_wkt(w.geom),
         planned_at=w.planned_at,
         notes=w.notes,
+        category=w.category,
     )

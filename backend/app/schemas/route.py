@@ -41,6 +41,7 @@ class StageIn(BaseModel):
     planned_start_at: datetime | None = None
     planned_duration_s: int | None = Field(default=None, ge=0)
     assigned_runner: str | None = None
+    layer: str | None = None
 
 
 class StageOut(BaseModel):
@@ -53,6 +54,7 @@ class StageOut(BaseModel):
     planned_start_at: datetime | None = None
     planned_duration_s: int | None = None
     assigned_runner: str | None = None
+    layer: str | None = None
 
 
 class WaypointIn(BaseModel):
@@ -61,6 +63,7 @@ class WaypointIn(BaseModel):
     geom: Point
     planned_at: datetime | None = None
     notes: str | None = None
+    category: str | None = None
 
 
 class WaypointOut(BaseModel):
@@ -71,6 +74,7 @@ class WaypointOut(BaseModel):
     geom: Point
     planned_at: datetime | None = None
     notes: str | None = None
+    category: str | None = None
 
 
 class RouteIn(BaseModel):

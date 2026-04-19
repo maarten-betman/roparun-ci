@@ -1,0 +1,96 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<gpx xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd" version="1.1" creator="Roparun" xmlns="http://www.topografix.com/GPX/1/1">
+  <wpt lat="49.834752173376131" lon="3.359795868526485">
+    <name>WC Mesnil-Saint-Laurent</name>
+  </wpt>
+  <wpt lat="49.974829929160578" lon="3.378781552225905">
+    <name>WC Brancourt-le-Grand</name>
+  </wpt>
+  <wpt lat="50.091866666666668" lon="3.4485027777777781">
+    <name>WC Betry</name>
+  </wpt>
+  <wpt lat="50.229614415238643" lon="3.5482932330249639">
+    <name>WC Escarmain</name>
+  </wpt>
+  <wpt lat="50.328261844124647" lon="3.57530463708192">
+    <name>WC Saultin</name>
+  </wpt>
+  <wpt lat="50.4348" lon="3.685258333333334">
+    <name>WC Hensies</name>
+  </wpt>
+  <wpt lat="50.597343" lon="3.772275">
+    <name>WC Tongre-Notre-Dame</name>
+  </wpt>
+  <wpt lat="50.7378908537573" lon="3.863184369061206">
+    <name>WC Lessines</name>
+  </wpt>
+  <wpt lat="50.85872777777778" lon="4.0215027777777781">
+    <name>WC Denderhoutem</name>
+  </wpt>
+  <wpt lat="50.972402777777788" lon="4.1691694444444449">
+    <name>WC Opwijk</name>
+  </wpt>
+  <wpt lat="51.092012356964311" lon="4.1041553546908194">
+    <name>WC Hamme</name>
+  </wpt>
+  <wpt lat="51.175466666666679" lon="4.317936111111111">
+    <name>WC Kruibeke</name>
+  </wpt>
+  <wpt lat="51.315569444444442" lon="4.5161777777777781">
+    <name>WC Brasschaat</name>
+  </wpt>
+  <wpt lat="51.47350729963739" lon="4.6750819935114922">
+    <name>WC Zundert</name>
+  </wpt>
+  <wpt lat="51.509873309274809" lon="4.8467530972295307">
+    <name>WC Chaam</name>
+  </wpt>
+  <wpt lat="51.619358916968281" lon="4.9491817770533579">
+    <name>WC Dongen</name>
+  </wpt>
+  <wpt lat="51.564323163620749" lon="4.757288756625579">
+    <name>WC Breda</name>
+  </wpt>
+  <wpt lat="51.579170975923752" lon="4.576166476763377">
+    <name>WC Hoeven</name>
+  </wpt>
+  <wpt lat="51.5274255462544" lon="4.4447233849291754">
+    <name>WC Roosendaal</name>
+  </wpt>
+  <wpt lat="51.3934041390172" lon="4.3577280530132834">
+    <name>WC Ossendrecht</name>
+  </wpt>
+  <wpt lat="51.483004149891563" lon="4.280171100189718">
+    <name>WC Bergen op Zoom</name>
+  </wpt>
+  <wpt lat="51.6277688201093" lon="4.363742593951196">
+    <name>WC Dinteloord</name>
+  </wpt>
+  <wpt lat="51.653115" lon="4.385134">
+    <name>WC Dintelmond I (OffRoute)</name>
+  </wpt>
+  <wpt lat="51.647933011696352" lon="4.390663637121639">
+    <name>WC Dintelmond II (OffRoute)</name>
+  </wpt>
+  <wpt lat="51.726371193692842" lon="4.422687046354441">
+    <name>WC Numansdorp</name>
+  </wpt>
+  <wpt lat="51.808328188603681" lon="4.4118949330433122">
+    <name>WC Oud-Beijerland I</name>
+  </wpt>
+  <wpt lat="51.812423656739341" lon="4.413101437304789">
+    <name>WC Oud-Beijerland II</name>
+  </wpt>
+  <wpt lat="51.855738174334732" lon="4.5364677426659394">
+    <name>WC Barendrecht</name>
+  </wpt>
+  <wpt lat="51.90823000000001" lon="4.374645">
+    <name>WC Vijfsluizen I (OffRoute)</name>
+  </wpt>
+  <wpt lat="51.907007000000007" lon="4.372328">
+    <name>WC Vijfsluizen II (OffRoute)</name>
+  </wpt>
+  <wpt lat="51.906145000000009" lon="4.375101">
+    <name>WC Vijfsluizen III (OffRoute)</name>
+  </wpt>
+</gpx>

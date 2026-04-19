@@ -1,12 +1,29 @@
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { useEffect, useRef, useState } from "react";
-import type { RouteDetail, Stage, Waypoint } from "../api/types";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { RouteDetail, Stage, Waypoint, WaypointKind } from "../api/types";
 import { DEFAULT_CENTER, DEFAULT_ZOOM, mapStyle } from "../map/style";
+
+// Per-layer stage color. Keys match the `layer` values written by
+// backend/app/scripts/load_roparun_2026.py; anything else falls back to red.
+const LAYER_COLORS: Record<string, string> = {
+  runners: "#e63946",
+  vehicle_b: "#0b3d91",
+};
+
+const DEFAULT_STAGE_COLOR = "#e63946";
+
+const KIND_COLORS: Record<WaypointKind, string> = {
+  handover: "#f4a261",
+  rest: "#2a9d8f",
+  checkpoint: "#0b3d91",
+  hazard: "#d62828",
+  poi: "#6b7280",
+};
 
 const FALLBACK_ROUTE: GeoJSON.Feature<GeoJSON.LineString> = {
   type: "Feature",
-  properties: { name: "Placeholder Paris → Rotterdam" },
+  properties: { name: "Placeholder Paris → Rotterdam", color: DEFAULT_STAGE_COLOR },
   geometry: {
     type: "LineString",
     coordinates: [
@@ -23,7 +40,12 @@ function stageFC(stages: Stage[]): GeoJSON.FeatureCollection {
     type: "FeatureCollection",
     features: stages.map((s) => ({
       type: "Feature",
-      properties: { ordinal: s.ordinal, name: s.name ?? "" },
+      properties: {
+        ordinal: s.ordinal,
+        name: s.name ?? "",
+        layer: s.layer ?? "",
+        color: (s.layer && LAYER_COLORS[s.layer]) || DEFAULT_STAGE_COLOR,
+      },
       geometry: s.geom,
     })),
   };
@@ -34,7 +56,12 @@ function waypointFC(wps: Waypoint[]): GeoJSON.FeatureCollection {
     type: "FeatureCollection",
     features: wps.map((w) => ({
       type: "Feature",
-      properties: { kind: w.kind, name: w.name ?? "" },
+      properties: {
+        kind: w.kind,
+        category: w.category ?? "",
+        name: w.name ?? "",
+        color: KIND_COLORS[w.kind] ?? KIND_COLORS.poi,
+      },
       geometry: w.geom,
     })),
   };
@@ -78,6 +105,9 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
       attributionControl: { compact: true },
     });
     mapRef.current = map;
+
+    const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false });
+
     map.on("load", () => {
       map.addSource("route", {
         type: "geojson",
@@ -87,7 +117,10 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
         id: "route-line",
         type: "line",
         source: "route",
-        paint: { "line-color": "#e63946", "line-width": 4 },
+        paint: {
+          "line-color": ["coalesce", ["get", "color"], DEFAULT_STAGE_COLOR],
+          "line-width": 4,
+        },
       });
       map.addSource("waypoints", {
         type: "geojson",
@@ -98,14 +131,41 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
         type: "circle",
         source: "waypoints",
         paint: {
-          "circle-radius": 6,
-          "circle-color": "#fff",
-          "circle-stroke-width": 2,
-          "circle-stroke-color": "#0b3d91",
+          "circle-radius": [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            // Keep markers tiny at country level so 20k points don't soup the map.
+            6,
+            2,
+            10,
+            4,
+            14,
+            7,
+          ],
+          "circle-color": ["coalesce", ["get", "color"], KIND_COLORS.poi],
+          "circle-stroke-width": 1,
+          "circle-stroke-color": "#ffffff",
         },
       });
+
+      // Hover name popups on waypoints.
+      map.on("mouseenter", "waypoints-circle", (e) => {
+        const f = e.features?.[0];
+        if (!f) return;
+        map.getCanvas().style.cursor = "pointer";
+        const name = (f.properties?.name as string | undefined) || "Point";
+        const geom = f.geometry as GeoJSON.Point;
+        popup.setLngLat(geom.coordinates as [number, number]).setText(name).addTo(map);
+      });
+      map.on("mouseleave", "waypoints-circle", () => {
+        map.getCanvas().style.cursor = "";
+        popup.remove();
+      });
     });
+
     return () => {
+      popup.remove();
       map.remove();
       mapRef.current = null;
     };
@@ -129,6 +189,21 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
     else map.once("load", apply);
   }, [detail]);
 
+  const layerSummary = useMemo(() => {
+    if (!detail) return null;
+    const stageCounts = new Map<string, number>();
+    for (const s of detail.stages) {
+      const key = s.layer ?? "other";
+      stageCounts.set(key, (stageCounts.get(key) ?? 0) + 1);
+    }
+    const wpCounts = new Map<string, number>();
+    for (const w of detail.waypoints) {
+      const key = w.category ?? w.kind;
+      wpCounts.set(key, (wpCounts.get(key) ?? 0) + 1);
+    }
+    return { stageCounts, wpCounts };
+  }, [detail]);
+
   return (
     <div style={{ position: "fixed", inset: 0 }}>
       <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />
@@ -137,24 +212,42 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
           position: "absolute",
           top: 16,
           left: 16,
-          background: "rgba(11, 61, 145, 0.9)",
+          background: "rgba(11, 61, 145, 0.92)",
           color: "white",
           padding: "12px 16px",
           borderRadius: 8,
           fontFamily: "system-ui, sans-serif",
           zIndex: 1,
+          maxWidth: 320,
         }}
       >
         <strong>Roparun · Route viewer</strong>
         <div style={{ fontSize: 12, opacity: 0.85 }}>
           {detail
-            ? `${detail.name} · ${detail.stages.length} stages`
+            ? `${detail.name} · ${detail.stages.length} stages · ${detail.waypoints.length} POIs`
             : notFound
               ? "No published route for this team/year"
               : publicPath
                 ? "Loading…"
                 : "Placeholder Paris → Rotterdam"}
         </div>
+        {layerSummary && layerSummary.wpCounts.size > 0 && (
+          <details style={{ marginTop: 8, fontSize: 11, opacity: 0.85 }}>
+            <summary style={{ cursor: "pointer" }}>Layers</summary>
+            <ul style={{ margin: "6px 0 0 16px", padding: 0 }}>
+              {[...layerSummary.stageCounts].map(([k, n]) => (
+                <li key={`s-${k}`}>
+                  {k} · {n} stage{n !== 1 ? "s" : ""}
+                </li>
+              ))}
+              {[...layerSummary.wpCounts].map(([k, n]) => (
+                <li key={`w-${k}`}>
+                  {k} · {n}
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
       </div>
     </div>
   );

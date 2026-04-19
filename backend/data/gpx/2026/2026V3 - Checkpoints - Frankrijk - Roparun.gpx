@@ -1,0 +1,48 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<gpx xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd" version="1.1" creator="Roparun" xmlns="http://www.topografix.com/GPX/1/1">
+  <wpt lat="49.758973862202993" lon="3.2244918272651519">
+    <name>CP01 Clastres START</name>
+  </wpt>
+  <wpt lat="49.975992822099428" lon="3.3815465886869389">
+    <name>CP02 Brancourt-le-Grand</name>
+  </wpt>
+  <wpt lat="50.228916643992889" lon="3.5477012958360792">
+    <name>CP03 Escarmain</name>
+  </wpt>
+  <wpt lat="50.435082479073543" lon="3.6863021664558042">
+    <name>CP04 Hensies</name>
+  </wpt>
+  <wpt lat="50.735926840088048" lon="3.8622586387070919">
+    <name>CP05 Lessines</name>
+  </wpt>
+  <wpt lat="50.971928334795" lon="4.1686882373436234">
+    <name>CP06 Opwijk</name>
+  </wpt>
+  <wpt lat="51.175447993347177" lon="4.3200504570177873">
+    <name>CP07 Kruibeke</name>
+  </wpt>
+  <wpt lat="51.473726954403091" lon="4.67428101585601">
+    <name>CP08 Zundert</name>
+  </wpt>
+  <wpt lat="51.618527777777778" lon="4.9515944444444449">
+    <name>CP09 Dongen</name>
+  </wpt>
+  <wpt lat="51.581696652074079" lon="4.5851068450919952">
+    <name>CP10 Hoeven</name>
+  </wpt>
+  <wpt lat="51.4230797539699" lon="4.3332380971799811">
+    <name>CP11 Hoogerheide</name>
+  </wpt>
+  <wpt lat="51.62911095796769" lon="4.363907925356223">
+    <name>CP12 Dinteloord</name>
+  </wpt>
+  <wpt lat="51.856287000172379" lon="4.5364261535815631">
+    <name>CP13 Barendrecht</name>
+  </wpt>
+  <wpt lat="51.908626339547077" lon="4.4925807526366723">
+    <name>CP14 Wilhelminaplein (Tijdregistratie)</name>
+  </wpt>
+  <wpt lat="51.922511978302822" lon="4.4789206688755367">
+    <name>CP15 Coolsingel (Finishregistratie)</name>
+  </wpt>
+</gpx>

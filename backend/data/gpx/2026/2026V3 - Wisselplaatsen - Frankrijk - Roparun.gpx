@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<gpx xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd" version="1.1" creator="Roparun" xmlns="http://www.topografix.com/GPX/1/1">
+  <wpt lat="51.646068210092039" lon="4.3922143284262827">
+    <name>Wisselplaats Dintelmond</name>
+  </wpt>
+  <wpt lat="51.808605693205109" lon="4.4116950936775368">
+    <name>Wisselplaats Oud-Beijerland I</name>
+  </wpt>
+  <wpt lat="51.812215716710277" lon="4.4125127168631328">
+    <name>Wisselplaats Oud-Beijerland II</name>
+  </wpt>
+</gpx>

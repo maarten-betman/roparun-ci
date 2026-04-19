@@ -268,28 +268,35 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
     const map = mapRef.current;
     if (!map) return;
     const apply = () => {
-      // `match` with a literal array of labels evaluates reliably across all
-      // MapLibre versions (some build of the `in` expression were returning
-      // false on every feature, hiding all waypoints). Empty list → no
-      // features match, which is what "Hide all" asks for.
+      // Build filters as `any` over explicit `==` comparisons. Both `in
+      // literal[]` and `match value[]` turned out to be flaky on the
+      // deployed MapLibre/MapTiler combination — they returned false for
+      // every feature, hiding all waypoints. `any + ==` is the most
+      // primitive filter form and works identically across all versions.
       const allowedLayers = [...visibleLayers];
-      const lineFilter: maplibregl.FilterSpecification =
+      const lineFilter =
         allowedLayers.length === 0
           ? ["==", ["get", "layer"], ""]
           : [
               "any",
               ["==", ["get", "layer"], ""],
-              ["match", ["get", "layer"], allowedLayers, true, false],
+              ...allowedLayers.map((k) => ["==", ["get", "layer"], k]),
             ];
-      if (map.getLayer("route-line")) map.setFilter("route-line", lineFilter);
+      if (map.getLayer("route-line")) {
+        map.setFilter("route-line", lineFilter as maplibregl.FilterSpecification);
+      }
 
       const allowedCats = [...visibleCategories];
-      const wpFilter: maplibregl.FilterSpecification =
+      const wpFilter =
         allowedCats.length === 0
-          ? ["boolean", false]
-          : ["match", ["get", "category"], allowedCats, true, false];
-      if (map.getLayer("waypoints-circle")) map.setFilter("waypoints-circle", wpFilter);
-      if (map.getLayer("waypoints-icon")) map.setFilter("waypoints-icon", wpFilter);
+          ? ["==", ["literal", "__none__"], ["literal", "__match__"]]
+          : ["any", ...allowedCats.map((k) => ["==", ["get", "category"], k])];
+      if (map.getLayer("waypoints-circle")) {
+        map.setFilter("waypoints-circle", wpFilter as maplibregl.FilterSpecification);
+      }
+      if (map.getLayer("waypoints-icon")) {
+        map.setFilter("waypoints-icon", wpFilter as maplibregl.FilterSpecification);
+      }
     };
     if (map.isStyleLoaded()) apply();
     else map.once("load", apply);

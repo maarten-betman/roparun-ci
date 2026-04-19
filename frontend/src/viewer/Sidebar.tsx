@@ -195,10 +195,16 @@ export function Sidebar({
                             checked={visible}
                             onChange={() => onToggleCategory(k)}
                           />
-                          <span
-                            className="sidebar__swatch"
-                            style={{ background: meta.color }}
-                          />
+                          {meta.icon ? (
+                            <span className="sidebar__icon" aria-hidden>
+                              {meta.icon}
+                            </span>
+                          ) : (
+                            <span
+                              className="sidebar__swatch"
+                              style={{ background: meta.color }}
+                            />
+                          )}
                           <span className="sidebar__rowtext">
                             {meta.label} ·{" "}
                             <span className="sidebar__rowmeta">

@@ -59,7 +59,20 @@ export function Sidebar({
     return out;
   }, [detail]);
 
-  const totalKm = fmtKm(detail?.total_distance_m ?? null);
+  // Per-layer distance sums. The backend's `total_distance_m` is the sum of
+  // *every* stage across the route, which is misleading for us because the
+  // runners and vehicle tracks are parallel overlays on the same route, not
+  // sequential legs. We surface each layer's distance separately.
+  const distanceByLayer = useMemo(() => {
+    const out = new Map<string, number>();
+    if (!detail) return out;
+    for (const s of detail.stages) {
+      const key = s.layer ?? "other";
+      out.set(key, (out.get(key) ?? 0) + (s.distance_m ?? 0));
+    }
+    return out;
+  }, [detail]);
+
   const versionTag = detail ? detectConceptVersion(detail.name) : null;
 
   return (
@@ -98,12 +111,12 @@ export function Sidebar({
           <>
             <dl className="sidebar__stats">
               <div>
-                <dt>Stages</dt>
-                <dd>{detail.stages.length}</dd>
+                <dt>Runners</dt>
+                <dd>{fmtKm(distanceByLayer.get("runners") ?? null)}</dd>
               </div>
               <div>
-                <dt>Distance</dt>
-                <dd>{totalKm}</dd>
+                <dt>B-vehicle</dt>
+                <dd>{fmtKm(distanceByLayer.get("vehicle_b") ?? null)}</dd>
               </div>
               <div>
                 <dt>POIs</dt>

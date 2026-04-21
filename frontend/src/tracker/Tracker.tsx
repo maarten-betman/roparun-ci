@@ -20,8 +20,6 @@ const ROLES: { value: DeviceRole; label: string }[] = [
   { value: "runner", label: "Runner" },
   { value: "cyclist", label: "Cyclist" },
   { value: "driver", label: "Driver" },
-  { value: "medic", label: "Medic" },
-  { value: "other", label: "Other" },
 ];
 
 function loadCreds(): DeviceCredentials | null {

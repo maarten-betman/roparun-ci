@@ -90,3 +90,29 @@ class LiveUpdate(BaseModel):
     name: str
     role: DeviceRole
     positions: list[LivePoint]
+
+
+class ChangeEventIn(BaseModel):
+    """Handover annotation posted by a driver's tracker."""
+
+    ts: datetime
+    lng: float = Field(ge=-180, le=180)
+    lat: float = Field(ge=-90, le=90)
+
+
+class ChangeEventOut(BaseModel):
+    """Wire shape for /public/…/change-events and the WS broadcast."""
+
+    id: uuid.UUID
+    device_id: uuid.UUID
+    device_name: str
+    ts: datetime
+    lng: float
+    lat: float
+
+
+class ChangeEventBroadcast(BaseModel):
+    """WebSocket message: a single change event was recorded."""
+
+    type: str = "change_event"
+    event: ChangeEventOut

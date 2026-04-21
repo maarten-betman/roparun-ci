@@ -167,17 +167,21 @@
   width: 10px;
   height: 10px;
   border-radius: 999px;
-  background: var(--action-bg, #2a9d8f);
   flex: 0 0 auto;
+}
+.sidebar__livedot--fresh {
+  background: var(--action-bg, #2a9d8f);
   box-shadow: 0 0 0 3px rgba(42, 157, 143, 0.2);
-  animation: livepulse 1.6s ease-in-out infinite;
+  animation: livepulse-fresh 1.6s ease-in-out infinite;
+}
+.sidebar__livedot--recent {
+  background: #f59e0b;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.2);
 }
 .sidebar__livedot--stale {
   background: var(--fg-3, #9ca3af);
-  box-shadow: none;
-  animation: none;
 }
-@keyframes livepulse {
+@keyframes livepulse-fresh {
   0%, 100% { box-shadow: 0 0 0 3px rgba(42, 157, 143, 0.2); }
   50%      { box-shadow: 0 0 0 6px rgba(42, 157, 143, 0.0); }
 }

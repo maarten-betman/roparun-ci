@@ -526,17 +526,27 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
     [liveDevices],
   );
 
-  const sidebarLive = useMemo(() => {
-    const now = Date.now();
-    return liveDevices.map((d) => ({
-      id: d.id,
-      name: d.name,
-      role: d.role,
-      battery_pct: d.last.battery_pct,
-      // Treat a device as stale if its latest fix is older than 60s.
-      stale: now - new Date(d.last.ts).getTime() > 60000,
-    }));
-  }, [liveDevices]);
+  const sidebarLive = useMemo(
+    () =>
+      liveDevices.map((d) => ({
+        id: d.id,
+        name: d.name,
+        role: d.role,
+        battery_pct: d.last.battery_pct,
+        lastTs: d.last.ts,
+      })),
+    [liveDevices],
+  );
+
+  // Re-render the sidebar live section every second so the relative-age
+  // labels ("5s ago", "2m ago") update in place. Only runs when there's at
+  // least one live device; idle viewers cost no wakeups.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (liveDevices.length === 0) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [liveDevices.length]);
 
   const onFlyToStage = useCallback(
     (ordinal: number) => {
@@ -601,6 +611,7 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
         onFlyToStage={onFlyToStage}
         liveDevices={sidebarLive}
         onFlyToDevice={onFlyToDevice}
+        now={now}
       />
     </div>
   );

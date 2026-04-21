@@ -12,7 +12,31 @@ export interface SidebarLiveDevice {
   name: string;
   role: string;
   battery_pct: number | null;
-  stale: boolean;
+  /** ISO timestamp of the device's most recent fix. Sidebar computes the
+   *  age itself against a ticking `now` so every row refreshes in place. */
+  lastTs: string;
+}
+
+/** Age bucket driving the sidebar__livedot color + pulse.
+ *  - fresh: ≤ 10 s (pulsing green)
+ *  - recent: ≤ 60 s (solid amber)
+ *  - stale: > 60 s (grey) */
+export type LiveAge = "fresh" | "recent" | "stale";
+
+export function ageBucket(ageMs: number): LiveAge {
+  if (ageMs <= 10_000) return "fresh";
+  if (ageMs <= 60_000) return "recent";
+  return "stale";
+}
+
+export function formatAge(ageMs: number): string {
+  if (ageMs < 0) return "just now";
+  const s = Math.round(ageMs / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  return `${h}h ago`;
 }
 
 export interface SidebarProps {
@@ -29,6 +53,9 @@ export interface SidebarProps {
   onFlyToStage?: (ordinal: number) => void;
   liveDevices?: SidebarLiveDevice[];
   onFlyToDevice?: (deviceId: string) => void;
+  /** Ticking "now" in ms since epoch — passed from the parent so all live
+   *  rows re-render on the same clock without each owning a timer. */
+  now?: number;
 }
 
 function fmtKm(meters: number | null | undefined): string {
@@ -58,6 +85,7 @@ export function Sidebar({
   onFlyToStage,
   liveDevices,
   onFlyToDevice,
+  now = Date.now(),
 }: SidebarProps) {
   const [open, setOpen] = useState(false); // mobile drawer state
 
@@ -167,33 +195,40 @@ export function Sidebar({
               <section className="sidebar__section">
                 <h3>Live ({liveDevices.length})</h3>
                 <ul className="sidebar__list">
-                  {liveDevices.map((d) => (
-                    <li key={d.id} className="sidebar__row">
-                      <label className="sidebar__check">
-                        <span
-                          className={`sidebar__livedot ${d.stale ? "sidebar__livedot--stale" : ""}`}
-                          aria-hidden
-                        />
-                        <span className="sidebar__rowtext">
-                          {d.name}{" "}
-                          <span className="sidebar__rowmeta">
-                            · {d.role}
-                            {d.battery_pct != null ? ` · 🔋 ${Math.round(d.battery_pct)}%` : ""}
+                  {liveDevices.map((d) => {
+                    const ageMs = Math.max(0, now - new Date(d.lastTs).getTime());
+                    const bucket = ageBucket(ageMs);
+                    return (
+                      <li key={d.id} className="sidebar__row">
+                        <label className="sidebar__check">
+                          <span
+                            className={`sidebar__livedot sidebar__livedot--${bucket}`}
+                            title={`last fix ${formatAge(ageMs)}`}
+                            aria-hidden
+                          />
+                          <span className="sidebar__rowtext">
+                            {d.name}{" "}
+                            <span className="sidebar__rowmeta">
+                              · {d.role} · {formatAge(ageMs)}
+                              {d.battery_pct != null
+                                ? ` · 🔋 ${Math.round(d.battery_pct)}%`
+                                : ""}
+                            </span>
                           </span>
-                        </span>
-                      </label>
-                      {onFlyToDevice && (
-                        <button
-                          type="button"
-                          className="sidebar__zoom"
-                          onClick={() => onFlyToDevice(d.id)}
-                          title="Fly to device"
-                        >
-                          ↗
-                        </button>
-                      )}
-                    </li>
-                  ))}
+                        </label>
+                        {onFlyToDevice && (
+                          <button
+                            type="button"
+                            className="sidebar__zoom"
+                            onClick={() => onFlyToDevice(d.id)}
+                            title="Fly to device"
+                          >
+                            ↗
+                          </button>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               </section>
             )}

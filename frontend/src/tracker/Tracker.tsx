@@ -1,20 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { DeviceCredentials, DeviceRole } from "./api";
-import { ingestPositions, registerDevice } from "./api";
-import {
-  commitDrain,
-  drain,
-  enqueue,
-  queueLength,
-  type QueuedPosition,
-} from "./queue";
+import { lazy, Suspense, useState } from "react";
+import type { DeviceRole, StoredCredentials } from "./api";
+import { registerDevice } from "./api";
+import { useWatch } from "./useWatch";
 import "./tracker.css";
 
 const CREDS_KEY = "roparun-tracker-creds-v1";
-/** Flush to /ingest every N ms (or whenever the tab regains connectivity). */
-const FLUSH_INTERVAL_MS = 5000;
-/** Maximum batch size per POST /ingest (matches the backend's schema cap). */
-const FLUSH_BATCH = 200;
+
+// Only drivers get the map view — lazy-load so runners/cyclists still see a
+// tiny 6 KB tracker bundle on slow mobile connections.
+const DriverView = lazy(() => import("./DriverView").then((m) => ({ default: m.DriverView })));
 
 const ROLES: { value: DeviceRole; label: string }[] = [
   { value: "runner", label: "Runner" },
@@ -22,16 +16,16 @@ const ROLES: { value: DeviceRole; label: string }[] = [
   { value: "driver", label: "Driver" },
 ];
 
-function loadCreds(): DeviceCredentials | null {
+function loadCreds(): StoredCredentials | null {
   try {
     const raw = localStorage.getItem(CREDS_KEY);
-    return raw ? (JSON.parse(raw) as DeviceCredentials) : null;
+    return raw ? (JSON.parse(raw) as StoredCredentials) : null;
   } catch {
     return null;
   }
 }
 
-function saveCreds(c: DeviceCredentials): void {
+function saveCreds(c: StoredCredentials): void {
   localStorage.setItem(CREDS_KEY, JSON.stringify(c));
 }
 
@@ -40,15 +34,32 @@ function clearCreds(): void {
 }
 
 export function Tracker() {
-  const [creds, setCreds] = useState<DeviceCredentials | null>(() => loadCreds());
-  return creds ? (
-    <Watch creds={creds} onUnpair={() => { clearCreds(); setCreds(null); }} />
-  ) : (
-    <Pair onPaired={(c) => { saveCreds(c); setCreds(c); }} />
-  );
+  const [creds, setCreds] = useState<StoredCredentials | null>(() => loadCreds());
+  if (!creds) {
+    return (
+      <Pair
+        onPaired={(c) => {
+          saveCreds(c);
+          setCreds(c);
+        }}
+      />
+    );
+  }
+  const unpair = () => {
+    clearCreds();
+    setCreds(null);
+  };
+  if (creds.role === "driver") {
+    return (
+      <Suspense fallback={<div className="tracker"><h1>Loading driver view…</h1></div>}>
+        <DriverView creds={creds} onUnpair={unpair} />
+      </Suspense>
+    );
+  }
+  return <SimpleWatch creds={creds} onUnpair={unpair} />;
 }
 
-function Pair({ onPaired }: { onPaired: (c: DeviceCredentials) => void }) {
+function Pair({ onPaired }: { onPaired: (c: StoredCredentials) => void }) {
   const [name, setName] = useState("");
   const [role, setRole] = useState<DeviceRole>("runner");
   const [teamSlug, setTeamSlug] = useState("conclusion");
@@ -61,8 +72,13 @@ function Pair({ onPaired }: { onPaired: (c: DeviceCredentials) => void }) {
     setBusy(true);
     setError(null);
     try {
-      const creds = await registerDevice({ team_slug: teamSlug, year, name: name.trim(), role });
-      onPaired(creds);
+      const serverCreds = await registerDevice({
+        team_slug: teamSlug,
+        year,
+        name: name.trim(),
+        role,
+      });
+      onPaired({ ...serverCreds, team_slug: teamSlug, year });
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -120,109 +136,14 @@ function Pair({ onPaired }: { onPaired: (c: DeviceCredentials) => void }) {
   );
 }
 
-function Watch({ creds, onUnpair }: { creds: DeviceCredentials; onUnpair: () => void }) {
-  const [tracking, setTracking] = useState(false);
-  const [lastPos, setLastPos] = useState<GeolocationPosition | null>(null);
-  const [queued, setQueued] = useState(queueLength());
-  const [status, setStatus] = useState<string>("Idle");
-  const [battery, setBattery] = useState<number | null>(null);
-  const watchIdRef = useRef<number | null>(null);
-  const flushTimerRef = useRef<number | null>(null);
-
-  // Battery level — supported on Android Chrome; Safari returns undefined.
-  useEffect(() => {
-    const nav = navigator as Navigator & {
-      getBattery?: () => Promise<{ level: number }>;
-    };
-    void nav.getBattery?.().then((b) => setBattery(Math.round(b.level * 100)));
-  }, []);
-
-  const enqueuePosition = useCallback(
-    (pos: GeolocationPosition) => {
-      const q: QueuedPosition = {
-        ts: new Date(pos.timestamp).toISOString(),
-        lng: pos.coords.longitude,
-        lat: pos.coords.latitude,
-        accuracy_m: pos.coords.accuracy,
-        speed_mps: pos.coords.speed ?? undefined,
-        heading_deg: pos.coords.heading ?? undefined,
-        battery_pct: battery ?? undefined,
-      };
-      const next = enqueue(q);
-      setQueued(next.length);
-      setLastPos(pos);
-    },
-    [battery],
-  );
-
-  const flush = useCallback(async () => {
-    const batch = drain(FLUSH_BATCH);
-    if (batch.length === 0) return;
-    try {
-      await ingestPositions(creds.token, batch);
-      const rest = commitDrain(batch.length);
-      setQueued(rest.length);
-      setStatus(`Flushed ${batch.length}`);
-    } catch (err) {
-      // Leave the queue intact; we'll retry on the next tick / online event.
-      setStatus(`Flush failed (${(err as Error).message}) — queued ${queueLength()}`);
-    }
-  }, [creds.token]);
-
-  const start = useCallback(() => {
-    if (!("geolocation" in navigator)) {
-      setStatus("Geolocation unsupported");
-      return;
-    }
-    setStatus("Watching…");
-    watchIdRef.current = navigator.geolocation.watchPosition(
-      enqueuePosition,
-      (err) => setStatus(`Error: ${err.message}`),
-      { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 },
-    );
-    flushTimerRef.current = window.setInterval(flush, FLUSH_INTERVAL_MS);
-    setTracking(true);
-  }, [enqueuePosition, flush]);
-
-  const stop = useCallback(() => {
-    if (watchIdRef.current != null) {
-      navigator.geolocation.clearWatch(watchIdRef.current);
-      watchIdRef.current = null;
-    }
-    if (flushTimerRef.current != null) {
-      window.clearInterval(flushTimerRef.current);
-      flushTimerRef.current = null;
-    }
-    setTracking(false);
-    setStatus("Stopped");
-    void flush();
-  }, [flush]);
-
-  // Flush as soon as the tab regains connectivity — the online event fires
-  // when coming back from offline / airplane mode / tunnels.
-  useEffect(() => {
-    const onOnline = () => void flush();
-    window.addEventListener("online", onOnline);
-    return () => window.removeEventListener("online", onOnline);
-  }, [flush]);
-
-  // Best-effort flush on tab hide; use sendBeacon semantics if we had time
-  // to implement it, but a plain fetch from a visibilitychange handler
-  // usually completes fast enough.
-  useEffect(() => {
-    const onVis = () => {
-      if (document.visibilityState === "hidden") void flush();
-    };
-    document.addEventListener("visibilitychange", onVis);
-    return () => document.removeEventListener("visibilitychange", onVis);
-  }, [flush]);
-
-  useEffect(() => {
-    return () => {
-      if (watchIdRef.current != null) navigator.geolocation.clearWatch(watchIdRef.current);
-      if (flushTimerRef.current != null) window.clearInterval(flushTimerRef.current);
-    };
-  }, []);
+function SimpleWatch({
+  creds,
+  onUnpair,
+}: {
+  creds: StoredCredentials;
+  onUnpair: () => void;
+}) {
+  const { tracking, lastPos, queued, status, battery, start, stop } = useWatch(creds.token);
 
   return (
     <div className="tracker">

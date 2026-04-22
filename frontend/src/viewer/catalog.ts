@@ -49,6 +49,17 @@ export const STAGE_LAYERS: Record<string, LayerMeta> = {
 };
 
 export const WAYPOINT_CATEGORIES: Record<string, CategoryMeta> = {
+  // Pre-planned big team-rotation points (~every 4 h along the route).
+  // Distinct from `handovers` / Wisselplaatsen, which are the per-leg
+  // runner handoffs. Team changes are planned + edited in the Planner.
+  team_changes: {
+    label: "Team changes (~4h)",
+    color: "#f43f5e",
+    style: "marker",
+    visible: true,
+    icon: "👥",
+  },
+
   // Operational POIs — on by default, marker style.
   checkpoints: {
     label: "Checkpoints (CP)",

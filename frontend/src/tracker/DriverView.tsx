@@ -10,7 +10,7 @@ import {
   pointAtDistance,
   sliceByDistance,
   type LngLat,
-} from "./trackMath";
+} from "../map/trackMath";
 import { useWatch } from "./useWatch";
 
 /** Default distance (meters) between runner changes. */

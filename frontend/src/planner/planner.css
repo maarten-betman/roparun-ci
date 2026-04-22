@@ -1,0 +1,19 @@
+/* Draggable team-change marker in the Planner. MapLibre wraps this
+ * element in its own absolute-positioned container and applies the
+ * transform; we just style a 32×32 click target with a red-pink
+ * emoji badge and a hover cursor. */
+.planner__tc {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  line-height: 1;
+  cursor: grab;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.3));
+  user-select: none;
+}
+.planner__tc:active {
+  cursor: grabbing;
+}

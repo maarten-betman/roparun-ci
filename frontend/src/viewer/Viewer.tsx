@@ -183,6 +183,12 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
     });
     mapRef.current = map;
 
+    // Keep the canvas in sync with the container (flex layout may finish
+    // after MapLibre's initial sizing; viewport resize / topbar recalcs).
+    const ro = new ResizeObserver(() => map.resize());
+    ro.observe(containerRef.current);
+    requestAnimationFrame(() => map.resize());
+
     const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false });
 
     map.on("load", () => {
@@ -384,6 +390,7 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
     });
 
     return () => {
+      ro.disconnect();
       popup.remove();
       map.remove();
       mapRef.current = null;

@@ -141,6 +141,16 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
       attributionControl: { compact: true },
     });
     mapRef.current = map;
+
+    // MapLibre sizes the canvas from the container at construction time. If
+    // the flex layout hasn't finished computing when this effect runs the
+    // container is 0×0 and the canvas stays invisible. Force a resize right
+    // after the next paint, and keep the canvas in sync with container
+    // resizes (orientation change, settings panel open/close).
+    const ro = new ResizeObserver(() => map.resize());
+    ro.observe(containerRef.current);
+    requestAnimationFrame(() => map.resize());
+
     map.on("load", () => {
       map.addSource("runners", {
         type: "geojson",
@@ -220,6 +230,7 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
     });
 
     return () => {
+      ro.disconnect();
       map.remove();
       mapRef.current = null;
     };

@@ -339,6 +339,49 @@
   margin-left: 2px;
 }
 
+/* DOM-based next-change marker — sits above the map via maplibregl.Marker,
+ * so it renders even if the next-* circle layers in the style fail. */
+.driver__nextmarker {
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.driver__nextmarker__halo {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 64px;
+  height: 64px;
+  margin: -32px 0 0 -32px;
+  border-radius: 999px;
+  background: rgba(42, 157, 143, 0.25);
+  border: 2px solid rgba(42, 157, 143, 0.65);
+  animation: nextpulse 1.8s ease-in-out infinite;
+}
+.driver__nextmarker__core {
+  position: relative;
+  background: #2a9d8f;
+  color: #fff;
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  padding: 4px 8px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 3px #fff, 0 4px 10px rgba(0, 0, 0, 0.2);
+}
+@keyframes nextpulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  50% {
+    transform: scale(1.25);
+    opacity: 0.3;
+  }
+}
+
 .driver__cta {
   flex: 0 0 auto;
   width: 100%;

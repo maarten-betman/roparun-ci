@@ -43,6 +43,7 @@ export interface DriverViewProps {
 export function DriverView({ creds, onUnpair }: DriverViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
+  const nextMarkerRef = useRef<maplibregl.Marker | null>(null);
   const apiKey = import.meta.env.VITE_MAPTILER_KEY as string | undefined;
   const watch = useWatch(creds.token);
   const [track, setTrack] = useState<LngLat[] | null>(null);
@@ -299,6 +300,8 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
 
     return () => {
       ro.disconnect();
+      nextMarkerRef.current?.remove();
+      nextMarkerRef.current = null;
       map.remove();
       mapRef.current = null;
     };
@@ -380,6 +383,10 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
     const map = mapRef.current;
     if (!map) return;
     const apply = () => {
+      // Log so if the marker is still missing we can see the computed value.
+      // eslint-disable-next-line no-console
+      console.log("[driver] nextExpected:", nextExpected, "targetM:", targetM);
+
       (map.getSource("next") as maplibregl.GeoJSONSource | undefined)?.setData({
         type: "FeatureCollection",
         features: nextExpected
@@ -392,6 +399,24 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
             ]
           : [],
       });
+
+      // DOM marker — guaranteed to render regardless of the basemap style's
+      // sprite / glyphs pipeline. Belt-and-suspenders alongside the circle
+      // layers below the next source.
+      if (nextExpected) {
+        if (!nextMarkerRef.current) {
+          const el = document.createElement("div");
+          el.className = "driver__nextmarker";
+          el.innerHTML = `
+            <div class="driver__nextmarker__halo"></div>
+            <div class="driver__nextmarker__core">NEXT</div>
+          `;
+          nextMarkerRef.current = new maplibregl.Marker({ element: el, anchor: "center" });
+        }
+        nextMarkerRef.current.setLngLat(nextExpected.point).addTo(map);
+      } else {
+        nextMarkerRef.current?.remove();
+      }
       if (nextExpected && track && cum) {
         const segment = sliceByDistance(
           track,

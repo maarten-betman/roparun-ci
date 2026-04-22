@@ -59,11 +59,14 @@ export function Tracker() {
   return <SimpleWatch creds={creds} onUnpair={unpair} />;
 }
 
+// The app is single-tenant for now — every device pairs against the same
+// event. If we ever host a second team we'll re-introduce a picker.
+const DEFAULT_TEAM_SLUG = "conclusion";
+const DEFAULT_YEAR = 2026;
+
 function Pair({ onPaired }: { onPaired: (c: StoredCredentials) => void }) {
   const [name, setName] = useState("");
   const [role, setRole] = useState<DeviceRole>("runner");
-  const [teamSlug, setTeamSlug] = useState("conclusion");
-  const [year, setYear] = useState(2026);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -73,12 +76,12 @@ function Pair({ onPaired }: { onPaired: (c: StoredCredentials) => void }) {
     setError(null);
     try {
       const serverCreds = await registerDevice({
-        team_slug: teamSlug,
-        year,
+        team_slug: DEFAULT_TEAM_SLUG,
+        year: DEFAULT_YEAR,
         name: name.trim(),
         role,
       });
-      onPaired({ ...serverCreds, team_slug: teamSlug, year });
+      onPaired({ ...serverCreds, team_slug: DEFAULT_TEAM_SLUG, year: DEFAULT_YEAR });
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -113,25 +116,13 @@ function Pair({ onPaired }: { onPaired: (c: StoredCredentials) => void }) {
           ))}
         </select>
       </label>
-      <details className="tracker__advanced">
-        <summary>Team / year</summary>
-        <label className="tracker__field">
-          <span>Team slug</span>
-          <input value={teamSlug} onChange={(e) => setTeamSlug(e.target.value)} />
-        </label>
-        <label className="tracker__field">
-          <span>Event year</span>
-          <input
-            type="number"
-            value={year}
-            onChange={(e) => setYear(Number(e.target.value))}
-          />
-        </label>
-      </details>
       {error && <div className="tracker__error">{error}</div>}
       <button type="submit" className="tracker__cta" disabled={busy || !name.trim()}>
         {busy ? "Pairing…" : "Pair device"}
       </button>
+      <p className="tracker__fineprint">
+        Conclusion Intelligence · Roparun 2026
+      </p>
     </form>
   );
 }

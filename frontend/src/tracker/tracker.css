@@ -106,6 +106,13 @@
   font-size: 13px;
 }
 
+.tracker__fineprint {
+  color: var(--fg-2, #6b7280);
+  font-size: 11px;
+  text-align: center;
+  margin: 8px 0 0;
+}
+
 .tracker__stats {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

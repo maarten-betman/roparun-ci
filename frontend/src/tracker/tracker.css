@@ -144,8 +144,8 @@
 .driver {
   position: fixed;
   inset: 0;
-  display: grid;
-  grid-template-rows: auto auto 1fr auto auto;
+  display: flex;
+  flex-direction: column;
   background: var(--bg-1, #fff);
   color: var(--fg-1, #111827);
   font-family: var(--font-ui, system-ui, sans-serif);
@@ -159,9 +159,25 @@
   background: var(--color-roparun-blue, #0b3d91);
   color: #fff;
   font-size: 14px;
+  flex: 0 0 auto;
+}
+.driver__headeractions {
+  display: flex;
+  gap: 6px;
 }
 .driver__meta {
   opacity: 0.75;
+}
+.driver__testbadge {
+  background: #f59e0b;
+  color: #111827;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 8px;
+  vertical-align: middle;
+  letter-spacing: 0.05em;
 }
 .driver__textbtn {
   background: transparent;
@@ -179,12 +195,15 @@
   border-bottom: 1px solid var(--border-1, #e5e7eb);
   background: var(--bg-2, #f3f4f6);
   font-size: 13px;
+  flex: 0 0 auto;
+  max-height: 60vh;
+  overflow-y: auto;
 }
 .driver__field {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  margin-bottom: 6px;
+  margin-bottom: 10px;
 }
 .driver__field span {
   font-size: 11px;
@@ -192,30 +211,59 @@
   letter-spacing: 0.05em;
   color: var(--fg-2, #6b7280);
 }
-.driver__field input {
+.driver__field input[type="number"],
+.driver__field input[type="text"] {
   padding: 8px 10px;
   font-size: 16px;
   font-family: inherit;
   border: 1px solid var(--border-1, #e5e7eb);
   border-radius: var(--radius-md, 6px);
 }
+.driver__field input[type="range"] {
+  width: 100%;
+  margin: 4px 0;
+}
 .driver__settings-meta {
   color: var(--fg-2, #6b7280);
   font-size: 12px;
+  margin-bottom: 12px;
+}
+.driver__check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 0;
+  font-size: 13px;
+  cursor: pointer;
+}
+.driver__check input {
+  margin-top: 2px;
+  flex: 0 0 auto;
+}
+.driver__testpanel {
+  margin-top: 8px;
+  padding: 10px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: var(--radius-md, 6px);
 }
 
-.driver__map {
+/* Map fills the remaining vertical space; HUD overlays the map area. */
+.driver__mapwrap {
   position: relative;
-  width: 100%;
-  height: 100%;
+  flex: 1 1 auto;
   min-height: 0;
+}
+.driver__map {
+  position: absolute;
+  inset: 0;
 }
 
 .driver__hud {
   position: absolute;
-  top: 56px; /* sits just under the header; settings panel pushes past */
+  top: 12px;
   right: 12px;
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.92);
   backdrop-filter: blur(4px);
   border: 1px solid var(--border-1, #e5e7eb);
   border-radius: var(--radius-md, 6px);
@@ -225,6 +273,7 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+  z-index: 1;
 }
 .driver__statline {
   display: flex;
@@ -236,12 +285,16 @@
   width: 8px;
   height: 8px;
   border-radius: 999px;
+  flex: 0 0 auto;
 }
 .driver__dot--on {
   background: var(--action-bg, #2a9d8f);
 }
 .driver__dot--off {
   background: var(--fg-3, #9ca3af);
+}
+.driver__dot--test {
+  background: #f59e0b;
 }
 .driver__next {
   color: var(--fg-1, #111827);
@@ -262,6 +315,7 @@
 }
 
 .driver__cta {
+  flex: 0 0 auto;
   width: 100%;
   background: var(--color-roparun-blue, #0b3d91);
   color: #fff;

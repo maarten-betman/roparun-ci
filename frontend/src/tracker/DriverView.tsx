@@ -7,6 +7,7 @@ import { fetchRunnersTrack, listChangeEvents, postChangeEvent } from "./api";
 import {
   cumulativeDistances,
   nextChangePoint,
+  pointAtDistance,
   type LngLat,
 } from "./trackMath";
 import { useWatch } from "./useWatch";
@@ -15,6 +16,7 @@ import { useWatch } from "./useWatch";
  *  persisted per device in localStorage. */
 const DEFAULT_TARGET_M = 1500;
 const TARGET_KEY = "roparun-tracker-target-m-v1";
+const TEST_MODE_KEY = "roparun-tracker-testmode-v1";
 
 const COLOR_RUNNERS = "#eab308";
 const COLOR_SELF = "#0b3d91";
@@ -25,6 +27,10 @@ function loadTarget(): number {
   const raw = localStorage.getItem(TARGET_KEY);
   const n = raw ? Number(raw) : NaN;
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_TARGET_M;
+}
+
+function loadTestMode(): boolean {
+  return localStorage.getItem(TEST_MODE_KEY) === "1";
 }
 
 export interface DriverViewProps {
@@ -42,14 +48,21 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
   const [targetM, setTargetM] = useState<number>(() => loadTarget());
   const [posting, setPosting] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [testMode, setTestMode] = useState<boolean>(() => loadTestMode());
+  // testProgress is the fraction (0–1) along the runners track for the mock
+  // self position. Slider in the settings panel controls it.
+  const [testProgress, setTestProgress] = useState<number>(0);
   const { team_slug: teamSlug, year } = creds;
 
-  // Auto-start GPS when the driver opens the screen — there's no reason to
-  // make them tap a second "Start" button inside a driver role.
-  const { start, tracking } = watch;
+  // Auto-start GPS unless we're in test mode (which bypasses the watch).
+  const { start, tracking, stop } = watch;
   useEffect(() => {
-    if (!tracking) start();
-  }, [start, tracking]);
+    if (testMode) {
+      if (tracking) stop();
+    } else if (!tracking) {
+      start();
+    }
+  }, [testMode, start, stop, tracking]);
 
   // Fetch the runners track + existing change events once.
   useEffect(() => {
@@ -75,7 +88,10 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
       try {
         const msg = JSON.parse(e.data) as { type: string; event?: ChangeEventOut };
         if (msg.type === "change_event" && msg.event) {
-          setChangeEvents((prev) => [msg.event!, ...prev.filter((x) => x.id !== msg.event!.id)]);
+          setChangeEvents((prev) => [
+            msg.event!,
+            ...prev.filter((x) => x.id !== msg.event!.id),
+          ]);
         }
       } catch {
         // ignore malformed frames
@@ -87,9 +103,23 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
   }, [teamSlug, year]);
 
   const cum = useMemo(() => (track ? cumulativeDistances(track) : null), [track]);
+  const totalKm = cum ? cum[cum.length - 1] / 1000 : 0;
+
+  // Effective self position: simulated when test mode is on, else the latest
+  // real GPS fix. This drives both the on-map self marker and the change
+  // button payload.
+  const selfPos = useMemo<LngLat | null>(() => {
+    if (testMode && track && cum) {
+      const dist = (cum[cum.length - 1] || 0) * testProgress;
+      return pointAtDistance(track, cum, dist);
+    }
+    if (watch.lastPos) {
+      return [watch.lastPos.coords.longitude, watch.lastPos.coords.latitude];
+    }
+    return null;
+  }, [testMode, track, cum, testProgress, watch.lastPos]);
 
   const lastChange = changeEvents[0] ?? null;
-
   const nextExpected = useMemo(() => {
     if (!track || !cum || !lastChange) return null;
     return nextChangePoint(
@@ -195,16 +225,17 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
     };
   }, [apiKey]);
 
-  // Push the runners track into the map when it arrives.
+  // Push the runners track when it arrives.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !track) return;
     const apply = () => {
       (map.getSource("runners") as maplibregl.GeoJSONSource | undefined)?.setData({
         type: "FeatureCollection",
-        features: [{ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: track } }],
+        features: [
+          { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: track } },
+        ],
       });
-      // Fit once when the track first arrives.
       const bounds = new maplibregl.LngLatBounds();
       for (const c of track) bounds.extend(c);
       if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 60, duration: 400 });
@@ -213,21 +244,20 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
     else map.once("load", apply);
   }, [track]);
 
-  // Push self position into the map whenever watchPosition fires.
+  // Push self (real or simulated) onto the map.
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !watch.lastPos) return;
-    const { longitude, latitude } = watch.lastPos.coords;
+    if (!map) return;
     const apply = () =>
       (map.getSource("self") as maplibregl.GeoJSONSource | undefined)?.setData({
         type: "FeatureCollection",
-        features: [
-          { type: "Feature", properties: {}, geometry: { type: "Point", coordinates: [longitude, latitude] } },
-        ],
+        features: selfPos
+          ? [{ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: selfPos } }]
+          : [],
       });
     if (map.isStyleLoaded()) apply();
     else map.once("load", apply);
-  }, [watch.lastPos]);
+  }, [selfPos]);
 
   // Push change events.
   useEffect(() => {
@@ -246,7 +276,7 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
     else map.once("load", apply);
   }, [changeEvents]);
 
-  // Push the projected next-change marker.
+  // Push next-expected projection.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -254,7 +284,13 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
       (map.getSource("next") as maplibregl.GeoJSONSource | undefined)?.setData({
         type: "FeatureCollection",
         features: nextExpected
-          ? [{ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: nextExpected.point } }]
+          ? [
+              {
+                type: "Feature",
+                properties: {},
+                geometry: { type: "Point", coordinates: nextExpected.point },
+              },
+            ]
           : [],
       });
     if (map.isStyleLoaded()) apply();
@@ -262,16 +298,16 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
   }, [nextExpected]);
 
   const onRunnerChange = async () => {
-    if (!watch.lastPos) {
-      alert("No GPS fix yet — wait a few seconds.");
+    if (!selfPos) {
+      alert("No position yet — wait for a GPS fix or enable test mode.");
       return;
     }
     setPosting(true);
     try {
       const ev = await postChangeEvent(creds.token, {
-        ts: new Date(watch.lastPos.timestamp).toISOString(),
-        lng: watch.lastPos.coords.longitude,
-        lat: watch.lastPos.coords.latitude,
+        ts: new Date().toISOString(),
+        lng: selfPos[0],
+        lat: selfPos[1],
       });
       setChangeEvents((prev) => [ev, ...prev]);
     } catch (err) {
@@ -286,14 +322,15 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
     localStorage.setItem(TARGET_KEY, String(v));
   };
 
+  const onTestModeToggle = (v: boolean) => {
+    setTestMode(v);
+    localStorage.setItem(TEST_MODE_KEY, v ? "1" : "0");
+  };
+
   const flyToSelf = () => {
     const map = mapRef.current;
-    if (!map || !watch.lastPos) return;
-    map.flyTo({
-      center: [watch.lastPos.coords.longitude, watch.lastPos.coords.latitude],
-      zoom: 14,
-      duration: 400,
-    });
+    if (!map || !selfPos) return;
+    map.flyTo({ center: selfPos, zoom: 14, duration: 400 });
   };
 
   return (
@@ -302,14 +339,22 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
         <div>
           <strong>{creds.name}</strong>
           <span className="driver__meta"> · driver</span>
+          {testMode && <span className="driver__testbadge">TEST</span>}
         </div>
-        <button type="button" className="driver__textbtn" onClick={() => setSettingsOpen((o) => !o)}>
-          {settingsOpen ? "Close" : "Settings"}
-        </button>
-        <button type="button" className="driver__textbtn" onClick={onUnpair}>
-          Unpair
-        </button>
+        <div className="driver__headeractions">
+          <button
+            type="button"
+            className="driver__textbtn"
+            onClick={() => setSettingsOpen((o) => !o)}
+          >
+            {settingsOpen ? "Close" : "Settings"}
+          </button>
+          <button type="button" className="driver__textbtn" onClick={onUnpair}>
+            Unpair
+          </button>
+        </div>
       </header>
+
       {settingsOpen && (
         <div className="driver__settings">
           <label className="driver__field">
@@ -323,34 +368,81 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
             />
           </label>
           <div className="driver__settings-meta">
-            Default 1500 m. Current next-change projection uses this distance
-            along the runners track from the last recorded change.
+            Default 1500 m. The next-change marker uses this distance along the
+            runners track from the most recent change.
           </div>
+
+          <label className="driver__check">
+            <input
+              type="checkbox"
+              checked={testMode}
+              onChange={(e) => onTestModeToggle(e.target.checked)}
+            />
+            <span>
+              <strong>Test mode</strong> — mock self position along the runners
+              track instead of using GPS. Real GPS upload is paused while
+              test mode is on; change events you submit are still recorded.
+            </span>
+          </label>
+
+          {testMode && cum && (
+            <div className="driver__testpanel">
+              <label className="driver__field">
+                <span>
+                  Position along route ({(testProgress * totalKm).toFixed(1)} km of{" "}
+                  {totalKm.toFixed(1)} km)
+                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={1000}
+                  value={Math.round(testProgress * 1000)}
+                  onChange={(e) => setTestProgress(Number(e.target.value) / 1000)}
+                />
+              </label>
+              <div className="driver__settings-meta">
+                Drag the slider to "drive" along the route. Tap{" "}
+                <em>Runner change here</em> at any point and the next-change
+                marker should land roughly {targetM} m further along.
+              </div>
+            </div>
+          )}
         </div>
       )}
-      <div ref={containerRef} className="driver__map" />
-      <div className="driver__hud">
-        <div className="driver__statline">
-          <span className={`driver__dot driver__dot--${watch.tracking ? "on" : "off"}`} />
-          {watch.status}
-          {watch.queued > 0 ? ` · ${watch.queued} queued` : ""}
-          {watch.battery != null ? ` · 🔋 ${watch.battery}%` : ""}
-        </div>
-        {lastChange && nextExpected && (
-          <div className="driver__next">
-            Last change at <strong>{formatAgo(lastChange.ts)}</strong>.
-            Next expected <strong>{targetM} m</strong> ahead.
+
+      <div className="driver__mapwrap">
+        <div ref={containerRef} className="driver__map" />
+        <div className="driver__hud">
+          <div className="driver__statline">
+            <span
+              className={`driver__dot driver__dot--${testMode ? "test" : watch.tracking ? "on" : "off"}`}
+            />
+            {testMode ? `test @ ${(testProgress * totalKm).toFixed(1)} km` : watch.status}
+            {!testMode && watch.queued > 0 ? ` · ${watch.queued} queued` : ""}
+            {!testMode && watch.battery != null ? ` · 🔋 ${watch.battery}%` : ""}
           </div>
-        )}
-        <button type="button" className="driver__selfbtn" onClick={flyToSelf} title="Center on me">
-          ↖ me
-        </button>
+          {lastChange && nextExpected && (
+            <div className="driver__next">
+              Last change <strong>{formatAgo(lastChange.ts)}</strong>. Next
+              expected <strong>{targetM} m</strong> ahead.
+            </div>
+          )}
+          <button
+            type="button"
+            className="driver__selfbtn"
+            onClick={flyToSelf}
+            title="Center on me"
+          >
+            ↖ me
+          </button>
+        </div>
       </div>
+
       <button
         type="button"
         className="driver__cta"
         onClick={onRunnerChange}
-        disabled={posting || !watch.lastPos}
+        disabled={posting || !selfPos}
       >
         {posting ? "Recording…" : "✋ Runner change here"}
       </button>

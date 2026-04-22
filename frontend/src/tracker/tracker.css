@@ -348,16 +348,17 @@
   margin-left: 2px;
 }
 
-/* DOM-based next-change marker. Fixed-size (64×64) box so the halo
- * pseudo-element has a stable frame to centre against and MapLibre's
- * Marker positioning can anchor it at the map coordinate. Belt-and-
- * suspenders alongside the circle layers. */
+/* React-owned next-change marker — absolute-positioned inside the
+ * .driver__mapwrap container. The parent effect updates left/top inline
+ * so the element glues to the map coordinate on every move. No MapLibre
+ * Marker / layer / sprite involvement. */
 .driver__nextmarker {
-  position: relative;
+  position: absolute;
   width: 64px;
   height: 64px;
+  margin-left: -32px;
+  margin-top: -32px;
   pointer-events: none;
-  /* Bump z-index so we sit above any MapLibre-injected overlays. */
   z-index: 10;
 }
 .driver__nextmarker::before {

@@ -43,11 +43,13 @@ export interface DriverViewProps {
 export function DriverView({ creds, onUnpair }: DriverViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
-  // Distinct refs so the diagnostic test-marker button can't shadow the
-  // real next-change marker (or vice-versa).
-  const nextMarkerRef = useRef<maplibregl.Marker | null>(null);
-  const testMarkerRef = useRef<maplibregl.Marker | null>(null);
   const apiKey = import.meta.env.VITE_MAPTILER_KEY as string | undefined;
+  // Projected screen pixel for the next-change marker. Recomputed on any
+  // map move/zoom/resize so a plain absolutely-positioned React <div> on
+  // top of the map stays glued to the right map coordinate. No MapLibre
+  // Marker API, no style layer pipeline, no Marker lifecycle — just
+  // React-owned DOM that we can't lose.
+  const [nextPixel, setNextPixel] = useState<{ x: number; y: number } | null>(null);
   const watch = useWatch(creds.token);
   const [track, setTrack] = useState<LngLat[] | null>(null);
   const [vehicleTrack, setVehicleTrack] = useState<LngLat[] | null>(null);
@@ -245,68 +247,12 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
         },
       });
 
-      map.addSource("next", {
-        type: "geojson",
-        data: { type: "FeatureCollection", features: [] },
-      });
-      // Outer halo — wide, translucent — so the marker is visible from zoom 8+.
-      map.addLayer({
-        id: "next-halo",
-        type: "circle",
-        source: "next",
-        paint: {
-          "circle-radius": 24,
-          "circle-color": COLOR_NEXT,
-          "circle-opacity": 0.18,
-        },
-      });
-      map.addLayer({
-        id: "next-ring",
-        type: "circle",
-        source: "next",
-        paint: {
-          "circle-radius": 14,
-          "circle-color": COLOR_NEXT,
-          "circle-opacity": 0.5,
-        },
-      });
-      map.addLayer({
-        id: "next-core",
-        type: "circle",
-        source: "next",
-        paint: {
-          "circle-radius": 9,
-          "circle-color": COLOR_NEXT,
-          "circle-stroke-width": 3,
-          "circle-stroke-color": "#ffffff",
-        },
-      });
-      map.addLayer({
-        id: "next-label",
-        type: "symbol",
-        source: "next",
-        layout: {
-          "text-field": ["get", "label"],
-          "text-font": ["Open Sans Semibold", "Arial Unicode MS Regular"],
-          "text-size": 12,
-          "text-offset": [0, -1.6],
-          "text-anchor": "bottom",
-          "text-allow-overlap": true,
-        },
-        paint: {
-          "text-color": "#065f46",
-          "text-halo-color": "#ffffff",
-          "text-halo-width": 2,
-        },
-      });
+      // (The NEXT change marker is rendered as a React-owned absolute
+      // <div> on top of the map — see JSX + the nextPixel effect above.)
     });
 
     return () => {
       ro.disconnect();
-      nextMarkerRef.current?.remove();
-      nextMarkerRef.current = null;
-      testMarkerRef.current?.remove();
-      testMarkerRef.current = null;
       map.remove();
       mapRef.current = null;
     };
@@ -383,43 +329,13 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
     else map.once("load", apply);
   }, [changeEvents]);
 
-  // Push next-expected projection + highlighted segment + auto-fit.
+  // Highlighted handover-segment line + auto-fit to the span. The next
+  // marker itself is rendered as a React-owned absolute-positioned <div>
+  // (see the JSX below), positioned from nextPixel which tracks the map.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
     const apply = () => {
-      // Log so if the marker is still missing we can see the computed value.
-      // eslint-disable-next-line no-console
-      console.log("[driver] nextExpected:", nextExpected, "targetM:", targetM);
-
-      (map.getSource("next") as maplibregl.GeoJSONSource | undefined)?.setData({
-        type: "FeatureCollection",
-        features: nextExpected
-          ? [
-              {
-                type: "Feature",
-                properties: { label: `Next change · ${targetM} m ahead` },
-                geometry: { type: "Point", coordinates: nextExpected.point },
-              },
-            ]
-          : [],
-      });
-
-      // DOM marker — recreated each time to rule out any stale state from
-      // repeated Marker.addTo() calls on the same instance.
-      nextMarkerRef.current?.remove();
-      nextMarkerRef.current = null;
-      if (nextExpected) {
-        const el = document.createElement("div");
-        el.className = "driver__nextmarker";
-        const label = document.createElement("div");
-        label.className = "driver__nextmarker__label";
-        label.textContent = "NEXT";
-        el.appendChild(label);
-        const m = new maplibregl.Marker({ element: el, anchor: "center" });
-        m.setLngLat(nextExpected.point).addTo(map);
-        nextMarkerRef.current = m;
-      }
       if (nextExpected && track && cum) {
         const segment = sliceByDistance(
           track,
@@ -440,16 +356,13 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
                 ]
               : [],
         });
-        // Auto-fit so both the red last-change ring AND the teal next marker
-        // are comfortably visible — otherwise at country zoom the handover
-        // span is a few pixels and the user can miss the next marker
-        // entirely under the red one.
         if (lastChange) {
           const bounds = new maplibregl.LngLatBounds();
           bounds.extend([lastChange.lng, lastChange.lat]);
           bounds.extend(nextExpected.point);
           for (const c of segment) bounds.extend(c);
-          if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 80, duration: 600, maxZoom: 15 });
+          if (!bounds.isEmpty())
+            map.fitBounds(bounds, { padding: 80, duration: 600, maxZoom: 15 });
         }
       } else {
         (map.getSource("handover-segment") as maplibregl.GeoJSONSource | undefined)?.setData({
@@ -460,7 +373,36 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
     };
     if (map.isStyleLoaded()) apply();
     else map.once("load", apply);
-  }, [nextExpected, targetM, track, cum, lastChange]);
+  }, [nextExpected, track, cum, lastChange]);
+
+  // Keep the React-owned next-marker glued to nextExpected.point on every
+  // map movement. This is the whole story for rendering the NEXT pill now:
+  // no MapLibre Marker, no style layers, no sprite, no fonts. Just
+  // map.project() + an absolute-positioned React <div>.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !nextExpected) {
+      setNextPixel(null);
+      return;
+    }
+    const update = () => {
+      const p = map.project(nextExpected.point);
+      setNextPixel({ x: p.x, y: p.y });
+    };
+    const onReady = () => {
+      update();
+      map.on("move", update);
+      map.on("zoom", update);
+      map.on("resize", update);
+    };
+    if (map.isStyleLoaded()) onReady();
+    else map.once("load", onReady);
+    return () => {
+      map.off("move", update);
+      map.off("zoom", update);
+      map.off("resize", update);
+    };
+  }, [nextExpected]);
 
   const onRunnerChange = async () => {
     if (!selfPos) {
@@ -504,44 +446,6 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
     map.flyTo({ center: nextExpected.point, zoom: 15, duration: 400 });
   };
 
-  // Debug-only: place the DOM marker at the current map centre so we can
-  // prove the marker-rendering pipeline works irrespective of whether
-  // nextExpected is computed. If tapping this makes the pulsing teal
-  // marker appear, the failure is in the nextExpected / setData flow.
-  // If it doesn't appear, the marker CSS / z-index is the culprit.
-  const placeTestMarker = () => {
-    const map = mapRef.current;
-    if (!map) return;
-    if (!testMarkerRef.current) {
-      const el = document.createElement("div");
-      el.className = "driver__nextmarker";
-      const label = document.createElement("div");
-      label.className = "driver__nextmarker__label";
-      label.textContent = "TEST";
-      el.appendChild(label);
-      testMarkerRef.current = new maplibregl.Marker({ element: el, anchor: "center" });
-    }
-    testMarkerRef.current.setLngLat(map.getCenter()).addTo(map);
-  };
-
-  // Small on-screen debug readout — the user is on an iPad and can't reach
-  // Safari DevTools without pairing to a Mac. Showing state directly
-  // unblocks debugging-by-screenshot. "dom" tells us whether the marker's
-  // element is still in the document, and "px" shows the projected screen
-  // coord — both answer "is the marker rendering somewhere sensible or
-  // being moved off-screen / detached".
-  const m = nextMarkerRef.current;
-  const mapNow = mapRef.current;
-  const inDom = m ? m.getElement().isConnected : false;
-  let screenPx: string | null = null;
-  if (m && mapNow) {
-    try {
-      const p = mapNow.project(m.getLngLat());
-      screenPx = `${Math.round(p.x)},${Math.round(p.y)}`;
-    } catch {
-      screenPx = "n/a";
-    }
-  }
   const debugLine = [
     `track ${track ? `${track.length} pts` : "—"}`,
     `vehicle ${vehicleTrack ? `${vehicleTrack.length} pts` : "—"}`,
@@ -551,8 +455,7 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
         ? `[${nextExpected.point[0].toFixed(4)}, ${nextExpected.point[1].toFixed(4)}]`
         : "—"
     }`,
-    `marker ${m ? (inDom ? "in-dom" : "orphan") : "—"}`,
-    `px ${screenPx ?? "—"}`,
+    `px ${nextPixel ? `${Math.round(nextPixel.x)},${Math.round(nextPixel.y)}` : "—"}`,
   ].join(" · ");
 
   return (
@@ -634,6 +537,17 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
 
       <div className="driver__mapwrap">
         <div ref={containerRef} className="driver__map" />
+        {nextPixel && (
+          <div
+            className="driver__nextmarker"
+            style={{
+              left: nextPixel.x,
+              top: nextPixel.y,
+            }}
+          >
+            <div className="driver__nextmarker__label">NEXT · {targetM} m</div>
+          </div>
+        )}
         <div className="driver__hud">
           <div className="driver__statline">
             <span
@@ -678,14 +592,6 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
                 → next change
               </button>
             )}
-            <button
-              type="button"
-              className="driver__selfbtn"
-              onClick={placeTestMarker}
-              title="Place a test marker at the map centre"
-            >
-              ⚑ test marker
-            </button>
           </div>
           <div className="driver__debug">{debugLine}</div>
         </div>

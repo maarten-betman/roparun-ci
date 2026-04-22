@@ -348,16 +348,14 @@
   margin-left: 2px;
 }
 
-/* React-owned next-change marker — absolute-positioned inside the
- * .driver__mapwrap container. The parent effect updates left/top inline
- * so the element glues to the map coordinate on every move. No MapLibre
- * Marker / layer / sprite involvement. */
+/* MapLibre Marker element. MapLibre wraps this in its own absolute-
+ * positioned container and applies a transform to place it at the
+ * map coordinate. We just need a 64×64 content box with a pulsing
+ * halo pseudo-element and a centered "NEXT" pill. */
 .driver__nextmarker {
-  position: absolute;
+  position: relative;
   width: 64px;
   height: 64px;
-  margin-left: -32px;
-  margin-top: -32px;
   pointer-events: none;
   z-index: 10;
 }

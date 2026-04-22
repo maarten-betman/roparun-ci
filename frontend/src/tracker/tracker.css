@@ -315,6 +315,24 @@
 .driver__selfbtn:hover {
   color: var(--color-roparun-blue, #0b3d91);
 }
+.driver__legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--fg-2, #6b7280);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.driver__legendsw {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-left: 2px;
+}
 
 .driver__cta {
   flex: 0 0 auto;

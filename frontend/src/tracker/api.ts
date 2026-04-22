@@ -100,3 +100,21 @@ export async function fetchRunnersTrack(
   const runner = detail.stages.find((s) => s.layer === "runners");
   return runner?.geom.coordinates ?? null;
 }
+
+/** Fetch both the runners track and the B-vehicle track in one round trip.
+ *  Drivers use the B-vehicle track as their own routing reference —
+ *  sometimes the runners' route isn't drivable (pedestrian zones, narrow
+ *  paths) and the B-vehicle path detours around those bits. */
+export async function fetchDriverTracks(
+  teamSlug: string,
+  year: number,
+): Promise<{ runners: [number, number][] | null; vehicleB: [number, number][] | null }> {
+  const res = await fetch(`${BASE}/public/${teamSlug}/${year}`);
+  if (!res.ok) return { runners: null, vehicleB: null };
+  const detail = (await res.json()) as {
+    stages: { layer: string | null; geom: { coordinates: [number, number][] } }[];
+  };
+  const runners = detail.stages.find((s) => s.layer === "runners")?.geom.coordinates ?? null;
+  const vehicleB = detail.stages.find((s) => s.layer === "vehicle_b")?.geom.coordinates ?? null;
+  return { runners, vehicleB };
+}

@@ -3,7 +3,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_CENTER, DEFAULT_ZOOM, mapStyle } from "../map/style";
 import type { ChangeEventOut, StoredCredentials } from "./api";
-import { fetchRunnersTrack, listChangeEvents, postChangeEvent } from "./api";
+import { fetchDriverTracks, listChangeEvents, postChangeEvent } from "./api";
 import {
   cumulativeDistances,
   nextChangePoint,
@@ -19,6 +19,7 @@ const TARGET_KEY = "roparun-tracker-target-m-v1";
 const TEST_MODE_KEY = "roparun-tracker-testmode-v1";
 
 const COLOR_RUNNERS = "#eab308";
+const COLOR_VEHICLE_B = "#2563eb";
 const COLOR_SELF = "#0b3d91";
 const COLOR_LAST = "#dc2626";
 const COLOR_NEXT = "#2a9d8f";
@@ -44,6 +45,7 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
   const apiKey = import.meta.env.VITE_MAPTILER_KEY as string | undefined;
   const watch = useWatch(creds.token);
   const [track, setTrack] = useState<LngLat[] | null>(null);
+  const [vehicleTrack, setVehicleTrack] = useState<LngLat[] | null>(null);
   const [changeEvents, setChangeEvents] = useState<ChangeEventOut[]>([]);
   const [targetM, setTargetM] = useState<number>(() => loadTarget());
   const [posting, setPosting] = useState(false);
@@ -64,11 +66,13 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
     }
   }, [testMode, start, stop, tracking]);
 
-  // Fetch the runners track + existing change events once.
+  // Fetch both tracks + existing change events once.
   useEffect(() => {
     let cancelled = false;
-    void fetchRunnersTrack(teamSlug, year).then((t) => {
-      if (!cancelled && t) setTrack(t);
+    void fetchDriverTracks(teamSlug, year).then(({ runners, vehicleB }) => {
+      if (cancelled) return;
+      if (runners) setTrack(runners);
+      if (vehicleB) setVehicleTrack(vehicleB);
     });
     void listChangeEvents(teamSlug, year).then((evs) => {
       if (!cancelled) setChangeEvents(evs);
@@ -152,6 +156,22 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
     requestAnimationFrame(() => map.resize());
 
     map.on("load", () => {
+      // Drawn first so later layers (runners line, markers) sit on top.
+      map.addSource("vehicle-b", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      map.addLayer({
+        id: "vehicle-b-line",
+        type: "line",
+        source: "vehicle-b",
+        paint: {
+          "line-color": COLOR_VEHICLE_B,
+          "line-width": 4,
+          "line-opacity": 0.85,
+        },
+      });
+
       map.addSource("runners", {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
@@ -206,6 +226,17 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
       });
+      // Outer halo — wide, translucent — so the marker is visible from zoom 8+.
+      map.addLayer({
+        id: "next-halo",
+        type: "circle",
+        source: "next",
+        paint: {
+          "circle-radius": 24,
+          "circle-color": COLOR_NEXT,
+          "circle-opacity": 0.18,
+        },
+      });
       map.addLayer({
         id: "next-ring",
         type: "circle",
@@ -213,7 +244,7 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
         paint: {
           "circle-radius": 14,
           "circle-color": COLOR_NEXT,
-          "circle-opacity": 0.3,
+          "circle-opacity": 0.5,
         },
       });
       map.addLayer({
@@ -221,10 +252,28 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
         type: "circle",
         source: "next",
         paint: {
-          "circle-radius": 7,
+          "circle-radius": 9,
           "circle-color": COLOR_NEXT,
-          "circle-stroke-width": 2,
-          "circle-stroke-color": "#fff",
+          "circle-stroke-width": 3,
+          "circle-stroke-color": "#ffffff",
+        },
+      });
+      map.addLayer({
+        id: "next-label",
+        type: "symbol",
+        source: "next",
+        layout: {
+          "text-field": ["get", "label"],
+          "text-font": ["Open Sans Semibold", "Arial Unicode MS Regular"],
+          "text-size": 12,
+          "text-offset": [0, -1.6],
+          "text-anchor": "bottom",
+          "text-allow-overlap": true,
+        },
+        paint: {
+          "text-color": "#065f46",
+          "text-halo-color": "#ffffff",
+          "text-halo-width": 2,
         },
       });
     });
@@ -236,24 +285,44 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
     };
   }, [apiKey]);
 
-  // Push the runners track when it arrives.
+  // Push the runners + vehicle-B tracks when they arrive. Fit to whichever
+  // tracks are present (driver needs to see both at country level on open).
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !track) return;
+    if (!map || (!track && !vehicleTrack)) return;
     const apply = () => {
-      (map.getSource("runners") as maplibregl.GeoJSONSource | undefined)?.setData({
-        type: "FeatureCollection",
-        features: [
-          { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: track } },
-        ],
-      });
+      if (track) {
+        (map.getSource("runners") as maplibregl.GeoJSONSource | undefined)?.setData({
+          type: "FeatureCollection",
+          features: [
+            {
+              type: "Feature",
+              properties: {},
+              geometry: { type: "LineString", coordinates: track },
+            },
+          ],
+        });
+      }
+      if (vehicleTrack) {
+        (map.getSource("vehicle-b") as maplibregl.GeoJSONSource | undefined)?.setData({
+          type: "FeatureCollection",
+          features: [
+            {
+              type: "Feature",
+              properties: {},
+              geometry: { type: "LineString", coordinates: vehicleTrack },
+            },
+          ],
+        });
+      }
       const bounds = new maplibregl.LngLatBounds();
-      for (const c of track) bounds.extend(c);
+      for (const c of track ?? []) bounds.extend(c);
+      for (const c of vehicleTrack ?? []) bounds.extend(c);
       if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 60, duration: 400 });
     };
     if (map.isStyleLoaded()) apply();
     else map.once("load", apply);
-  }, [track]);
+  }, [track, vehicleTrack]);
 
   // Push self (real or simulated) onto the map.
   useEffect(() => {
@@ -298,7 +367,7 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
           ? [
               {
                 type: "Feature",
-                properties: {},
+                properties: { label: `Next change · ${targetM} m ahead` },
                 geometry: { type: "Point", coordinates: nextExpected.point },
               },
             ]
@@ -306,7 +375,7 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
       });
     if (map.isStyleLoaded()) apply();
     else map.once("load", apply);
-  }, [nextExpected]);
+  }, [nextExpected, targetM]);
 
   const onRunnerChange = async () => {
     if (!selfPos) {
@@ -438,6 +507,16 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
               expected <strong>{targetM} m</strong> ahead.
             </div>
           )}
+          <div className="driver__legend">
+            <span className="driver__legendsw" style={{ background: COLOR_RUNNERS }} />
+            runners
+            <span className="driver__legendsw" style={{ background: COLOR_VEHICLE_B }} />
+            B-vehicle
+            <span className="driver__legendsw" style={{ background: COLOR_LAST }} />
+            changes
+            <span className="driver__legendsw" style={{ background: COLOR_NEXT }} />
+            next
+          </div>
           <button
             type="button"
             className="driver__selfbtn"

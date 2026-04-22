@@ -501,6 +501,41 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
     map.flyTo({ center: nextExpected.point, zoom: 15, duration: 400 });
   };
 
+  // Debug-only: place the DOM marker at the current map centre so we can
+  // prove the marker-rendering pipeline works irrespective of whether
+  // nextExpected is computed. If tapping this makes the pulsing teal
+  // marker appear, the failure is in the nextExpected / setData flow.
+  // If it doesn't appear, the marker CSS / z-index is the culprit.
+  const placeTestMarker = () => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (!nextMarkerRef.current) {
+      const el = document.createElement("div");
+      el.className = "driver__nextmarker";
+      const label = document.createElement("div");
+      label.className = "driver__nextmarker__label";
+      label.textContent = "TEST";
+      el.appendChild(label);
+      nextMarkerRef.current = new maplibregl.Marker({ element: el, anchor: "center" });
+    }
+    nextMarkerRef.current.setLngLat(map.getCenter()).addTo(map);
+  };
+
+  // Small on-screen debug readout — the user is on an iPad and can't reach
+  // Safari DevTools without pairing to a Mac. Showing state directly
+  // unblocks debugging-by-screenshot.
+  const debugLine = [
+    `track ${track ? `${track.length} pts` : "—"}`,
+    `vehicle ${vehicleTrack ? `${vehicleTrack.length} pts` : "—"}`,
+    `changes ${changeEvents.length}`,
+    `next ${
+      nextExpected
+        ? `[${nextExpected.point[0].toFixed(4)}, ${nextExpected.point[1].toFixed(4)}]`
+        : "—"
+    }`,
+    `marker ${nextMarkerRef.current ? "attached" : "—"}`,
+  ].join(" · ");
+
   return (
     <div className="driver">
       <header className="driver__header">
@@ -624,7 +659,16 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
                 → next change
               </button>
             )}
+            <button
+              type="button"
+              className="driver__selfbtn"
+              onClick={placeTestMarker}
+              title="Place a test marker at the map centre"
+            >
+              ⚑ test marker
+            </button>
           </div>
+          <div className="driver__debug">{debugLine}</div>
         </div>
       </div>
 

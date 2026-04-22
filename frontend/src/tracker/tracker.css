@@ -320,6 +320,15 @@
   gap: 6px;
   flex-wrap: wrap;
 }
+.driver__debug {
+  font-size: 10px;
+  color: var(--fg-2, #6b7280);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  word-break: break-all;
+  border-top: 1px dashed var(--border-1, #e5e7eb);
+  padding-top: 4px;
+  margin-top: 2px;
+}
 .driver__legend {
   display: flex;
   flex-wrap: wrap;

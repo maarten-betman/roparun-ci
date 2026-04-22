@@ -43,7 +43,10 @@ export interface DriverViewProps {
 export function DriverView({ creds, onUnpair }: DriverViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
+  // Distinct refs so the diagnostic test-marker button can't shadow the
+  // real next-change marker (or vice-versa).
   const nextMarkerRef = useRef<maplibregl.Marker | null>(null);
+  const testMarkerRef = useRef<maplibregl.Marker | null>(null);
   const apiKey = import.meta.env.VITE_MAPTILER_KEY as string | undefined;
   const watch = useWatch(creds.token);
   const [track, setTrack] = useState<LngLat[] | null>(null);
@@ -302,6 +305,8 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
       ro.disconnect();
       nextMarkerRef.current?.remove();
       nextMarkerRef.current = null;
+      testMarkerRef.current?.remove();
+      testMarkerRef.current = null;
       map.remove();
       mapRef.current = null;
     };
@@ -400,22 +405,20 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
           : [],
       });
 
-      // DOM marker — guaranteed to render regardless of the basemap style's
-      // sprite / glyphs pipeline. Belt-and-suspenders alongside the circle
-      // layers below the next source.
+      // DOM marker — recreated each time to rule out any stale state from
+      // repeated Marker.addTo() calls on the same instance.
+      nextMarkerRef.current?.remove();
+      nextMarkerRef.current = null;
       if (nextExpected) {
-        if (!nextMarkerRef.current) {
-          const el = document.createElement("div");
-          el.className = "driver__nextmarker";
-          const label = document.createElement("div");
-          label.className = "driver__nextmarker__label";
-          label.textContent = "NEXT";
-          el.appendChild(label);
-          nextMarkerRef.current = new maplibregl.Marker({ element: el, anchor: "center" });
-        }
-        nextMarkerRef.current.setLngLat(nextExpected.point).addTo(map);
-      } else {
-        nextMarkerRef.current?.remove();
+        const el = document.createElement("div");
+        el.className = "driver__nextmarker";
+        const label = document.createElement("div");
+        label.className = "driver__nextmarker__label";
+        label.textContent = "NEXT";
+        el.appendChild(label);
+        const m = new maplibregl.Marker({ element: el, anchor: "center" });
+        m.setLngLat(nextExpected.point).addTo(map);
+        nextMarkerRef.current = m;
       }
       if (nextExpected && track && cum) {
         const segment = sliceByDistance(
@@ -509,21 +512,36 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
   const placeTestMarker = () => {
     const map = mapRef.current;
     if (!map) return;
-    if (!nextMarkerRef.current) {
+    if (!testMarkerRef.current) {
       const el = document.createElement("div");
       el.className = "driver__nextmarker";
       const label = document.createElement("div");
       label.className = "driver__nextmarker__label";
       label.textContent = "TEST";
       el.appendChild(label);
-      nextMarkerRef.current = new maplibregl.Marker({ element: el, anchor: "center" });
+      testMarkerRef.current = new maplibregl.Marker({ element: el, anchor: "center" });
     }
-    nextMarkerRef.current.setLngLat(map.getCenter()).addTo(map);
+    testMarkerRef.current.setLngLat(map.getCenter()).addTo(map);
   };
 
   // Small on-screen debug readout — the user is on an iPad and can't reach
   // Safari DevTools without pairing to a Mac. Showing state directly
-  // unblocks debugging-by-screenshot.
+  // unblocks debugging-by-screenshot. "dom" tells us whether the marker's
+  // element is still in the document, and "px" shows the projected screen
+  // coord — both answer "is the marker rendering somewhere sensible or
+  // being moved off-screen / detached".
+  const m = nextMarkerRef.current;
+  const mapNow = mapRef.current;
+  const inDom = m ? m.getElement().isConnected : false;
+  let screenPx: string | null = null;
+  if (m && mapNow) {
+    try {
+      const p = mapNow.project(m.getLngLat());
+      screenPx = `${Math.round(p.x)},${Math.round(p.y)}`;
+    } catch {
+      screenPx = "n/a";
+    }
+  }
   const debugLine = [
     `track ${track ? `${track.length} pts` : "—"}`,
     `vehicle ${vehicleTrack ? `${vehicleTrack.length} pts` : "—"}`,
@@ -533,7 +551,8 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
         ? `[${nextExpected.point[0].toFixed(4)}, ${nextExpected.point[1].toFixed(4)}]`
         : "—"
     }`,
-    `marker ${nextMarkerRef.current ? "attached" : "—"}`,
+    `marker ${m ? (inDom ? "in-dom" : "orphan") : "—"}`,
+    `px ${screenPx ?? "—"}`,
   ].join(" · ");
 
   return (

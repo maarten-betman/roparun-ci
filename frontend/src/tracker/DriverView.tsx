@@ -407,10 +407,10 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
         if (!nextMarkerRef.current) {
           const el = document.createElement("div");
           el.className = "driver__nextmarker";
-          el.innerHTML = `
-            <div class="driver__nextmarker__halo"></div>
-            <div class="driver__nextmarker__core">NEXT</div>
-          `;
+          const label = document.createElement("div");
+          label.className = "driver__nextmarker__label";
+          label.textContent = "NEXT";
+          el.appendChild(label);
           nextMarkerRef.current = new maplibregl.Marker({ element: el, anchor: "center" });
         }
         nextMarkerRef.current.setLngLat(nextExpected.point).addTo(map);

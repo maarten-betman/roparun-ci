@@ -315,6 +315,11 @@
 .driver__selfbtn:hover {
   color: var(--color-roparun-blue, #0b3d91);
 }
+.driver__flybtns {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
 .driver__legend {
   display: flex;
   flex-wrap: wrap;

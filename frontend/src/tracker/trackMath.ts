@@ -117,8 +117,33 @@ export function nextChangePoint(
   cum: number[],
   lastChange: LngLat,
   targetM: number,
-): { point: LngLat; distanceAlongM: number } {
+): { point: LngLat; distanceAlongM: number; fromAlongM: number } {
   const snap = snapToTrack(track, cum, lastChange);
   const nextDist = snap.alongM + targetM;
-  return { point: pointAtDistance(track, cum, nextDist), distanceAlongM: nextDist };
+  return {
+    point: pointAtDistance(track, cum, nextDist),
+    distanceAlongM: nextDist,
+    fromAlongM: snap.alongM,
+  };
+}
+
+/** Return the ordered vertices of `track` that lie between `fromM` and
+ *  `toM` along the line, bookended by exact interpolated endpoints. Used
+ *  to draw a highlighted polyline between last-change and next-change. */
+export function sliceByDistance(
+  track: LngLat[],
+  cum: number[],
+  fromM: number,
+  toM: number,
+): LngLat[] {
+  if (track.length < 2 || toM <= fromM) return [];
+  const total = cum[cum.length - 1] ?? 0;
+  const lo = Math.max(0, fromM);
+  const hi = Math.min(total, toM);
+  const out: LngLat[] = [pointAtDistance(track, cum, lo)];
+  for (let i = 0; i < track.length; i++) {
+    if (cum[i] > lo && cum[i] < hi) out.push(track[i]);
+  }
+  out.push(pointAtDistance(track, cum, hi));
+  return out;
 }

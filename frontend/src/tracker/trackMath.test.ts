@@ -4,6 +4,7 @@ import {
   haversineMeters,
   nextChangePoint,
   pointAtDistance,
+  sliceByDistance,
   snapToTrack,
 } from "./trackMath";
 
@@ -85,5 +86,21 @@ describe("nextChangePoint", () => {
     const total = cum[cum.length - 1];
     const { point } = nextChangePoint(TRACK, cum, TRACK[0], total * 10);
     expect(point).toEqual(TRACK[TRACK.length - 1]);
+  });
+});
+
+describe("sliceByDistance", () => {
+  it("returns the slice between two distances, bookended by interpolated endpoints", () => {
+    const cum = cumulativeDistances(TRACK);
+    const slice = sliceByDistance(TRACK, cum, cum[1] / 2, cum[1] + cum[1] / 2);
+    // Should include both interpolated endpoints plus vertex 1 in between.
+    expect(slice.length).toBeGreaterThanOrEqual(3);
+    expect(slice[0][0]).toBeCloseTo(4.007, 3);
+    expect(slice[slice.length - 1][0]).toBeCloseTo(4.021, 3);
+  });
+
+  it("returns [] for an inverted range", () => {
+    const cum = cumulativeDistances(TRACK);
+    expect(sliceByDistance(TRACK, cum, 100, 10)).toEqual([]);
   });
 });

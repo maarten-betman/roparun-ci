@@ -8,6 +8,7 @@ import {
   cumulativeDistances,
   nextChangePoint,
   pointAtDistance,
+  sliceByDistance,
   type LngLat,
 } from "./trackMath";
 import { useWatch } from "./useWatch";
@@ -222,6 +223,24 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
         },
       });
 
+      // Highlighted track segment between the last-change snap point and the
+      // next-expected marker. Drawn under the marker circles so the teal dot
+      // sits on top of the line's end.
+      map.addSource("handover-segment", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      map.addLayer({
+        id: "handover-segment-line",
+        type: "line",
+        source: "handover-segment",
+        paint: {
+          "line-color": COLOR_NEXT,
+          "line-width": 6,
+          "line-opacity": 0.7,
+        },
+      });
+
       map.addSource("next", {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
@@ -356,11 +375,11 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
     else map.once("load", apply);
   }, [changeEvents]);
 
-  // Push next-expected projection.
+  // Push next-expected projection + highlighted segment + auto-fit.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    const apply = () =>
+    const apply = () => {
       (map.getSource("next") as maplibregl.GeoJSONSource | undefined)?.setData({
         type: "FeatureCollection",
         features: nextExpected
@@ -373,9 +392,47 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
             ]
           : [],
       });
+      if (nextExpected && track && cum) {
+        const segment = sliceByDistance(
+          track,
+          cum,
+          nextExpected.fromAlongM,
+          nextExpected.distanceAlongM,
+        );
+        (map.getSource("handover-segment") as maplibregl.GeoJSONSource | undefined)?.setData({
+          type: "FeatureCollection",
+          features:
+            segment.length >= 2
+              ? [
+                  {
+                    type: "Feature",
+                    properties: {},
+                    geometry: { type: "LineString", coordinates: segment },
+                  },
+                ]
+              : [],
+        });
+        // Auto-fit so both the red last-change ring AND the teal next marker
+        // are comfortably visible — otherwise at country zoom the handover
+        // span is a few pixels and the user can miss the next marker
+        // entirely under the red one.
+        if (lastChange) {
+          const bounds = new maplibregl.LngLatBounds();
+          bounds.extend([lastChange.lng, lastChange.lat]);
+          bounds.extend(nextExpected.point);
+          for (const c of segment) bounds.extend(c);
+          if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 80, duration: 600, maxZoom: 15 });
+        }
+      } else {
+        (map.getSource("handover-segment") as maplibregl.GeoJSONSource | undefined)?.setData({
+          type: "FeatureCollection",
+          features: [],
+        });
+      }
+    };
     if (map.isStyleLoaded()) apply();
     else map.once("load", apply);
-  }, [nextExpected, targetM]);
+  }, [nextExpected, targetM, track, cum, lastChange]);
 
   const onRunnerChange = async () => {
     if (!selfPos) {
@@ -411,6 +468,12 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
     const map = mapRef.current;
     if (!map || !selfPos) return;
     map.flyTo({ center: selfPos, zoom: 14, duration: 400 });
+  };
+
+  const flyToNext = () => {
+    const map = mapRef.current;
+    if (!map || !nextExpected) return;
+    map.flyTo({ center: nextExpected.point, zoom: 15, duration: 400 });
   };
 
   return (
@@ -517,14 +580,26 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
             <span className="driver__legendsw" style={{ background: COLOR_NEXT }} />
             next
           </div>
-          <button
-            type="button"
-            className="driver__selfbtn"
-            onClick={flyToSelf}
-            title="Center on me"
-          >
-            ↖ me
-          </button>
+          <div className="driver__flybtns">
+            <button
+              type="button"
+              className="driver__selfbtn"
+              onClick={flyToSelf}
+              title="Center on me"
+            >
+              ↖ me
+            </button>
+            {nextExpected && (
+              <button
+                type="button"
+                className="driver__selfbtn"
+                onClick={flyToNext}
+                title="Center on next change"
+              >
+                → next change
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

@@ -148,6 +148,11 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
   const [visibleCategories, setVisibleCategories] = useState<Set<string>>(() =>
     defaultVisibleCategories(),
   );
+  // Set true once the map's 'load' event fires. Used to re-trigger any
+  // effect that mutates style (filters, sources) so that work always
+  // happens after the sources + layers are in place — avoids an entire
+  // class of "effect ran but found no layers / silent no-op" bugs.
+  const [mapReady, setMapReady] = useState(false);
 
   const liveDevices = useLivePositions(publicPath);
 
@@ -387,6 +392,12 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
         map.getCanvas().style.cursor = "";
         popup.remove();
       });
+
+      // Signal to downstream effects that the style is loaded and all our
+      // sources + layers exist. Everything that calls setFilter / setData
+      // keys off this so a first-paint race can't produce a silent no-op
+      // that leaves toggles apparently "not working".
+      setMapReady(true);
     });
 
     return () => {
@@ -394,6 +405,7 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
       popup.remove();
       map.remove();
       mapRef.current = null;
+      setMapReady(false);
     };
   }, [apiKey]);
 
@@ -432,55 +444,53 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
     else map.once("load", apply);
   }, [liveDevices]);
 
-  // Apply layer/category filters whenever the visibility sets change.
+  // Apply layer/category filters whenever the visibility sets change, or
+  // when the map finishes loading (so the initial defaults are wired in
+  // as soon as the layers exist).
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
-    const apply = () => {
-      // Build filters as `any` over explicit `==` comparisons. Both `in
-      // literal[]` and `match value[]` turned out to be flaky on the
-      // deployed MapLibre/MapTiler combination — they returned false for
-      // every feature, hiding all waypoints. `any + ==` is the most
-      // primitive filter form and works identically across all versions.
-      const allowedLayers = [...visibleLayers];
-      const lineFilter =
-        allowedLayers.length === 0
-          ? ["==", ["get", "layer"], ""]
-          : [
-              "any",
-              ["==", ["get", "layer"], ""],
-              ...allowedLayers.map((k) => ["==", ["get", "layer"], k]),
-            ];
-      if (map.getLayer("route-line")) {
-        map.setFilter("route-line", lineFilter as maplibregl.FilterSpecification);
-      }
+    if (!map || !mapReady) return;
+    // Build filters as `any` over explicit `==` comparisons. Both `in
+    // literal[]` and `match value[]` turned out to be flaky on the
+    // deployed MapLibre/MapTiler combination — they returned false for
+    // every feature, hiding all waypoints. `any + ==` is the most
+    // primitive filter form and works identically across all versions.
+    const allowedLayers = [...visibleLayers];
+    const lineFilter =
+      allowedLayers.length === 0
+        ? ["==", ["get", "layer"], ""]
+        : [
+            "any",
+            ["==", ["get", "layer"], ""],
+            ...allowedLayers.map((k) => ["==", ["get", "layer"], k]),
+          ];
+    if (map.getLayer("route-line")) {
+      map.setFilter("route-line", lineFilter as maplibregl.FilterSpecification);
+    }
 
-      const allowedCats = [...visibleCategories];
-      const wpFilter =
-        allowedCats.length === 0
+    const allowedCats = [...visibleCategories];
+    const wpFilter =
+      allowedCats.length === 0
+        ? ["==", ["literal", "__none__"], ["literal", "__match__"]]
+        : ["any", ...allowedCats.map((k) => ["==", ["get", "category"], k])];
+    if (map.getLayer("waypoints-circle")) {
+      map.setFilter("waypoints-circle", wpFilter as maplibregl.FilterSpecification);
+    }
+    if (map.getLayer("waypoints-icon")) {
+      // Only features whose category has an icon registered should hit
+      // this layer — prevents noisy "missing image" console warnings and
+      // saves MapLibre from iterating 20k+ trace features for nothing.
+      const iconedCats = Object.entries(WAYPOINT_CATEGORIES)
+        .filter(([, m]) => m.icon)
+        .map(([k]) => k)
+        .filter((k) => visibleCategories.has(k));
+      const iconFilter =
+        iconedCats.length === 0
           ? ["==", ["literal", "__none__"], ["literal", "__match__"]]
-          : ["any", ...allowedCats.map((k) => ["==", ["get", "category"], k])];
-      if (map.getLayer("waypoints-circle")) {
-        map.setFilter("waypoints-circle", wpFilter as maplibregl.FilterSpecification);
-      }
-      if (map.getLayer("waypoints-icon")) {
-        // Only features whose category has an icon registered should hit
-        // this layer — prevents noisy "missing image" console warnings and
-        // saves MapLibre from iterating 20k+ trace features for nothing.
-        const iconedCats = Object.entries(WAYPOINT_CATEGORIES)
-          .filter(([, m]) => m.icon)
-          .map(([k]) => k)
-          .filter((k) => visibleCategories.has(k));
-        const iconFilter =
-          iconedCats.length === 0
-            ? ["==", ["literal", "__none__"], ["literal", "__match__"]]
-            : ["any", ...iconedCats.map((k) => ["==", ["get", "category"], k])];
-        map.setFilter("waypoints-icon", iconFilter as maplibregl.FilterSpecification);
-      }
-    };
-    if (map.isStyleLoaded()) apply();
-    else map.once("load", apply);
-  }, [visibleLayers, visibleCategories]);
+          : ["any", ...iconedCats.map((k) => ["==", ["get", "category"], k])];
+      map.setFilter("waypoints-icon", iconFilter as maplibregl.FilterSpecification);
+    }
+  }, [visibleLayers, visibleCategories, mapReady]);
 
   const toggle = useCallback((set: Set<string>, key: string): Set<string> => {
     const next = new Set(set);

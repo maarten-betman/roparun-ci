@@ -147,3 +147,33 @@ export function sliceByDistance(
   out.push(pointAtDistance(track, cum, hi));
   return out;
 }
+
+/** Remove the section of `track` between `fromM` and `toM` (meters
+ *  along the polyline). The two surviving halves are stitched together
+ *  into a single polyline; the cut shows visually as a straight line
+ *  between the two snap points. Used by the planner's runners-track
+ *  snip editor. */
+export function removeSliceByDistance(
+  track: LngLat[],
+  cum: number[],
+  fromM: number,
+  toM: number,
+): LngLat[] {
+  if (track.length < 2 || toM <= fromM) return [...track];
+  const total = cum[cum.length - 1] ?? 0;
+  const lo = Math.max(0, fromM);
+  const hi = Math.min(total, toM);
+
+  const before: LngLat[] = [];
+  for (let i = 0; i < track.length; i++) {
+    if (cum[i] < lo) before.push(track[i]);
+  }
+  before.push(pointAtDistance(track, cum, lo));
+
+  const after: LngLat[] = [pointAtDistance(track, cum, hi)];
+  for (let i = 0; i < track.length; i++) {
+    if (cum[i] > hi) after.push(track[i]);
+  }
+
+  return [...before, ...after];
+}

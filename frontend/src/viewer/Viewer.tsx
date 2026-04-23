@@ -589,6 +589,7 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
         title="Roparun · Route viewer"
         meta={topbarMeta}
         versionLabel={versionLabel}
+        currentPage="viewer"
         actions={
           <>
             <TopBarButton onClick={() => shareCurrentUrl()}>Share</TopBarButton>

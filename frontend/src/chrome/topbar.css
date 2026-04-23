@@ -49,6 +49,30 @@
   white-space: nowrap;
 }
 
+.topbar__nav {
+  display: flex;
+  gap: 2px;
+  margin-left: var(--space-4);
+}
+.topbar__navlink {
+  font-size: var(--fs-meta);
+  color: rgba(255, 255, 255, 0.75);
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  white-space: nowrap;
+  font-family: inherit;
+}
+.topbar__navlink:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+.topbar__navlink--active {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-weight: 600;
+}
+
 .topbar__spacer {
   flex: 1;
 }
@@ -98,7 +122,8 @@
     gap: var(--space-3);
   }
   .topbar__meta,
-  .topbar__pill {
+  .topbar__pill,
+  .topbar__nav {
     display: none;
   }
   .topbar__btn {

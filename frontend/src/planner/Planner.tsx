@@ -8,6 +8,8 @@ import { DEFAULT_CENTER, DEFAULT_ZOOM, mapStyle } from "../map/style";
 import {
   cumulativeDistances,
   pointAtDistance,
+  removeSliceByDistance,
+  sliceByDistance,
   snapToTrack,
   type LngLat,
 } from "../map/trackMath";
@@ -104,6 +106,14 @@ export function Planner({ apiKey }: PlannerProps) {
   const [teamChanges, setTeamChanges] = useState<TeamChange[]>([]);
   const [paceKmh, setPaceKmh] = useState<number>(() => loadPace());
 
+  // Runners-track snip editor. When `editMode` is on, clicks on the map
+  // are captured and snapped to the runners track; first click sets
+  // `snipStart.alongM`, second sets `snipEnd.alongM`. Both are in meters
+  // along the track so the snip window survives re-derivation of cum[].
+  const [editMode, setEditMode] = useState(false);
+  const [snipStart, setSnipStart] = useState<number | null>(null);
+  const [snipEnd, setSnipEnd] = useState<number | null>(null);
+
   // Runners track + cumulative distances — derived from `detail` and cached
   // so drag/snap callbacks don't have to recompute.
   const runnersTrack = useMemo<LngLat[] | null>(() => {
@@ -185,6 +195,47 @@ export function Planner({ apiKey }: PlannerProps) {
           "circle-color": "#fff",
           "circle-stroke-width": 2,
           "circle-stroke-color": "#0b3d91",
+        },
+      });
+      // Snip window: red glow under the runners line for the portion
+      // the user has selected to remove.
+      map.addSource("snip-window", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      map.addLayer({
+        id: "snip-window-glow",
+        type: "line",
+        source: "snip-window",
+        paint: {
+          "line-color": "#dc2626",
+          "line-width": 10,
+          "line-opacity": 0.35,
+        },
+      });
+      map.addLayer({
+        id: "snip-window-line",
+        type: "line",
+        source: "snip-window",
+        paint: {
+          "line-color": "#dc2626",
+          "line-width": 4,
+          "line-dasharray": [2, 2],
+        },
+      });
+      map.addSource("snip-endpoints", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      map.addLayer({
+        id: "snip-endpoints-ring",
+        type: "circle",
+        source: "snip-endpoints",
+        paint: {
+          "circle-radius": 8,
+          "circle-color": "#dc2626",
+          "circle-stroke-width": 3,
+          "circle-stroke-color": "#ffffff",
         },
       });
       setMapReady(true);
@@ -310,6 +361,131 @@ export function Planner({ apiKey }: PlannerProps) {
     }
   }, [teamChanges, mapReady]);
 
+  // ---- Snip editor (runners track) ----
+
+  // Mirror snip state into refs so the map click handler (registered
+  // once per editMode toggle) always reads the freshest values without
+  // re-registering on every click.
+  const snipStartRef = useRef<number | null>(null);
+  const snipEndRef = useRef<number | null>(null);
+  snipStartRef.current = snipStart;
+  snipEndRef.current = snipEnd;
+
+  // Snap map-clicks to the runners track when editMode is on. First
+  // click sets the start distance, second sets the end, third resets
+  // (new start, no end).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    if (!editMode) {
+      map.getCanvas().style.cursor = "";
+      return;
+    }
+    map.getCanvas().style.cursor = "crosshair";
+    const onClick = (e: maplibregl.MapMouseEvent) => {
+      const rt = runnersTrackRef.current;
+      const rc = runnersCumRef.current;
+      if (!rt || !rc) return;
+      const snap = snapToTrack(rt, rc, [e.lngLat.lng, e.lngLat.lat]);
+      const s = snipStartRef.current;
+      const eVal = snipEndRef.current;
+      if (s == null) {
+        setSnipStart(snap.alongM);
+      } else if (eVal == null) {
+        setSnipEnd(snap.alongM);
+      } else {
+        setSnipStart(snap.alongM);
+        setSnipEnd(null);
+      }
+    };
+    map.on("click", onClick);
+    return () => {
+      map.off("click", onClick);
+      map.getCanvas().style.cursor = "";
+    };
+  }, [editMode, mapReady]);
+
+  // Paint the snip window (line) + endpoint circles whenever the snip
+  // selection changes.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    const rt = runnersTrackRef.current;
+    const rc = runnersCumRef.current;
+
+    let lineFeatures: GeoJSON.Feature[] = [];
+    const endpointFeatures: GeoJSON.Feature[] = [];
+    if (rt && rc) {
+      if (snipStart != null && snipEnd != null) {
+        const [fromM, toM] = snipStart <= snipEnd ? [snipStart, snipEnd] : [snipEnd, snipStart];
+        const slice = sliceByDistance(rt, rc, fromM, toM);
+        if (slice.length >= 2) {
+          lineFeatures = [
+            {
+              type: "Feature",
+              properties: {},
+              geometry: { type: "LineString", coordinates: slice },
+            },
+          ];
+        }
+      }
+      for (const m of [snipStart, snipEnd]) {
+        if (m == null) continue;
+        const pt = pointAtDistance(rt, rc, m);
+        endpointFeatures.push({
+          type: "Feature",
+          properties: {},
+          geometry: { type: "Point", coordinates: pt },
+        });
+      }
+    }
+    (map.getSource("snip-window") as maplibregl.GeoJSONSource | undefined)?.setData({
+      type: "FeatureCollection",
+      features: lineFeatures,
+    });
+    (map.getSource("snip-endpoints") as maplibregl.GeoJSONSource | undefined)?.setData({
+      type: "FeatureCollection",
+      features: endpointFeatures,
+    });
+  }, [snipStart, snipEnd, mapReady]);
+
+  const toggleEditMode = () => {
+    if (editMode) {
+      setSnipStart(null);
+      setSnipEnd(null);
+    }
+    setEditMode((v) => !v);
+  };
+
+  const resetSnip = () => {
+    setSnipStart(null);
+    setSnipEnd(null);
+  };
+
+  const applySnip = () => {
+    if (snipStart == null || snipEnd == null || !runnersTrack || !runnersCum) return;
+    const [fromM, toM] = snipStart <= snipEnd ? [snipStart, snipEnd] : [snipEnd, snipStart];
+    const trimmed = removeSliceByDistance(runnersTrack, runnersCum, fromM, toM);
+    if (trimmed.length < 2) return;
+    setDetail((d) => {
+      if (!d) return d;
+      return {
+        ...d,
+        stages: d.stages.map((s) =>
+          s.layer === "runners"
+            ? { ...s, geom: { type: "LineString" as const, coordinates: trimmed } }
+            : s,
+        ),
+      };
+    });
+    setSnipStart(null);
+    setSnipEnd(null);
+    setEditMode(false);
+  };
+
+  const snipLengthM =
+    snipStart != null && snipEnd != null ? Math.abs(snipEnd - snipStart) : 0;
+
   const onUploadGpx = async (file: File) => {
     if (!selectedRouteId) return;
     setBusy(true);
@@ -427,6 +603,7 @@ export function Planner({ apiKey }: PlannerProps) {
         title="Roparun · Planner"
         meta={topbarMeta}
         versionLabel={versionLabel}
+        currentPage="planner"
         actions={
           detail ? (
             <TopBarButton variant="primary" href={api.gpxDownloadUrl(detail.id)} download>
@@ -529,6 +706,118 @@ export function Planner({ apiKey }: PlannerProps) {
               >
                 Save stage + team-change edits
               </button>
+
+              {/* Runners-track snip editor — click two points on the track
+                  in the map, preview the red section, remove it. The
+                  remaining halves are stitched into a single polyline. Not
+                  persisted until you hit Save above. */}
+              <section style={{ marginBottom: 16 }}>
+                <h2
+                  style={{
+                    fontSize: 11,
+                    textTransform: "uppercase",
+                    color: "#6b7280",
+                    margin: "0 0 6px",
+                    letterSpacing: "0.05em",
+                  }}
+                >
+                  Edit runners track
+                </h2>
+                {!editMode && (
+                  <button
+                    type="button"
+                    onClick={toggleEditMode}
+                    disabled={!runnersTrack}
+                    style={{
+                      width: "100%",
+                      padding: "6px 10px",
+                      border: "1px solid #e5e7eb",
+                      background: "#fff",
+                      borderRadius: 6,
+                      fontSize: 13,
+                      cursor: runnersTrack ? "pointer" : "default",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    ✂ Snip section
+                  </button>
+                )}
+                {editMode && (
+                  <div
+                    style={{
+                      border: "1px solid #fecaca",
+                      background: "#fef2f2",
+                      borderRadius: 6,
+                      padding: 10,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 6,
+                      fontSize: 12,
+                    }}
+                  >
+                    <div>
+                      {snipStart == null
+                        ? "Click the FIRST point on the runners track."
+                        : snipEnd == null
+                          ? "Now click the SECOND point to mark the end of the section."
+                          : `Section selected — ${(snipLengthM / 1000).toFixed(2)} km will be removed.`}
+                    </div>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button
+                        type="button"
+                        onClick={applySnip}
+                        disabled={snipStart == null || snipEnd == null}
+                        style={{
+                          flex: 1,
+                          padding: "6px 10px",
+                          background:
+                            snipStart == null || snipEnd == null ? "#9ca3af" : "#dc2626",
+                          color: "#fff",
+                          border: 0,
+                          borderRadius: 6,
+                          fontSize: 13,
+                          cursor:
+                            snipStart == null || snipEnd == null ? "default" : "pointer",
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        Remove section
+                      </button>
+                      <button
+                        type="button"
+                        onClick={resetSnip}
+                        disabled={snipStart == null && snipEnd == null}
+                        style={{
+                          padding: "6px 10px",
+                          background: "#fff",
+                          border: "1px solid #e5e7eb",
+                          borderRadius: 6,
+                          fontSize: 13,
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        Reset
+                      </button>
+                      <button
+                        type="button"
+                        onClick={toggleEditMode}
+                        style={{
+                          padding: "6px 10px",
+                          background: "#fff",
+                          border: "1px solid #e5e7eb",
+                          borderRadius: 6,
+                          fontSize: 13,
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </section>
 
               {/* Pace setting drives the time-from-start estimates for each
                   team change. Defaults to 12 km/h (a typical Roparun relay

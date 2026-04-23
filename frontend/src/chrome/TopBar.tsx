@@ -9,11 +9,19 @@ export interface TopBarProps {
   versionLabel?: string | null;
   /** Optional actions rendered on the right (buttons). */
   actions?: React.ReactNode;
+  /** Current page key — drives the highlighted item in the nav row. */
+  currentPage?: "viewer" | "planner" | "tracker";
 }
+
+const NAV_ITEMS: { key: "viewer" | "planner" | "tracker"; label: string; href: string }[] = [
+  { key: "viewer", label: "Viewer", href: "/" },
+  { key: "planner", label: "Planner", href: "/planner" },
+  { key: "tracker", label: "Tracker", href: "/tracker.html" },
+];
 
 /** Top bar with Conclusion Intelligence branding. Used by Viewer and Planner.
  *  The logo chip sits on a white background so it stays legible on navy. */
-export function TopBar({ title, meta, versionLabel, actions }: TopBarProps) {
+export function TopBar({ title, meta, versionLabel, actions, currentPage }: TopBarProps) {
   const showConceptPill = versionLabel && /^V0?[1-3]$/i.test(versionLabel);
   return (
     <header className="topbar">
@@ -27,6 +35,22 @@ export function TopBar({ title, meta, versionLabel, actions }: TopBarProps) {
       <div className="topbar__divider" />
       <div className="topbar__title">{title}</div>
       {meta && <div className="topbar__meta">{meta}</div>}
+      {currentPage && (
+        <nav className="topbar__nav" aria-label="Primary">
+          {NAV_ITEMS.map((item) => (
+            <a
+              key={item.key}
+              href={item.href}
+              className={`topbar__navlink ${
+                item.key === currentPage ? "topbar__navlink--active" : ""
+              }`}
+              aria-current={item.key === currentPage ? "page" : undefined}
+            >
+              {item.label}
+            </a>
+          ))}
+        </nav>
+      )}
       <div className="topbar__spacer" />
       {showConceptPill && (
         <div

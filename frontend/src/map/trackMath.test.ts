@@ -4,6 +4,7 @@ import {
   haversineMeters,
   nextChangePoint,
   pointAtDistance,
+  removeSliceByDistance,
   sliceByDistance,
   snapToTrack,
 } from "./trackMath";
@@ -102,5 +103,25 @@ describe("sliceByDistance", () => {
   it("returns [] for an inverted range", () => {
     const cum = cumulativeDistances(TRACK);
     expect(sliceByDistance(TRACK, cum, 100, 10)).toEqual([]);
+  });
+});
+
+describe("removeSliceByDistance", () => {
+  it("stitches the two halves across the cut", () => {
+    const cum = cumulativeDistances(TRACK);
+    // Cut spans [500m, 1500m] — vertex 1 (at ~1000m) is inside, vertices
+    // 0 and 2 & 3 are outside.
+    const trimmed = removeSliceByDistance(TRACK, cum, cum[1] / 2, cum[1] + cum[1] / 2);
+    expect(trimmed[0]).toEqual(TRACK[0]);
+    expect(trimmed[trimmed.length - 1]).toEqual(TRACK[TRACK.length - 1]);
+    // Vertex 1 falls inside the cut → must be gone.
+    expect(trimmed.some((p) => p[0] === TRACK[1][0] && p[1] === TRACK[1][1])).toBe(false);
+    // Vertex 2 is outside the cut (after it) → must still be there.
+    expect(trimmed.some((p) => p[0] === TRACK[2][0] && p[1] === TRACK[2][1])).toBe(true);
+  });
+
+  it("leaves the track unchanged for an inverted or empty range", () => {
+    const cum = cumulativeDistances(TRACK);
+    expect(removeSliceByDistance(TRACK, cum, 100, 10)).toEqual(TRACK);
   });
 });

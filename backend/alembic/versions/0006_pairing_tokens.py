@@ -22,6 +22,21 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # Reuse the device_role enum created in 0004. `sa.Enum(create_type=False)`
+    # does NOT honour the flag (SQLAlchemy still emits an implicit CREATE TYPE
+    # on table-create), so it fails with DuplicateObject. Use
+    # `postgresql.ENUM(..., create_type=False)` directly — that form honours
+    # the flag. Same pattern as 0003 for route_status.
+    device_role = postgresql.ENUM(
+        "runner",
+        "cyclist",
+        "driver",
+        "medic",
+        "other",
+        name="device_role",
+        create_type=False,
+    )
+
     op.create_table(
         "pairing_token",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -32,20 +47,7 @@ def upgrade() -> None:
             sa.ForeignKey("event.id", ondelete="CASCADE"),
             nullable=False,
         ),
-        # `device_role` enum was introduced by migration 0004 — reuse it.
-        sa.Column(
-            "role",
-            sa.Enum(
-                "runner",
-                "cyclist",
-                "driver",
-                "medic",
-                "other",
-                name="device_role",
-                create_type=False,
-            ),
-            nullable=False,
-        ),
+        sa.Column("role", device_role, nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("redeemed_at", sa.DateTime(timezone=True), nullable=True),

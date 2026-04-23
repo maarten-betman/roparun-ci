@@ -31,9 +31,9 @@ describe("rewriteUrl", () => {
     expect(rewriteUrl("./README.md")).toBe("/hulp");
   });
 
-  it("rewrites img paths to the public /hulp/img mount", () => {
-    expect(rewriteUrl("./img/viewer-desktop.png")).toBe("/hulp/img/viewer-desktop.png");
-    expect(rewriteUrl("img/viewer.png")).toBe("/hulp/img/viewer.png");
+  it("rewrites img paths to the public /hulp-img mount", () => {
+    expect(rewriteUrl("./img/viewer-desktop.png")).toBe("/hulp-img/viewer-desktop.png");
+    expect(rewriteUrl("img/viewer.png")).toBe("/hulp-img/viewer.png");
   });
 
   it("returns empty input unchanged", () => {

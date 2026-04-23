@@ -38,8 +38,12 @@ function slugFromPath(pathname: string): string {
 /** Rewrites repo-relative URLs to the ones the site serves:
  *   ./viewer.md                → /hulp/viewer
  *   ./viewer.md#foo            → /hulp/viewer#foo
- *   ./img/x.png                → /hulp/img/x.png
+ *   ./img/x.png                → /hulp-img/x.png
  *   anchors (#foo) and absolute URLs pass through unchanged.
+ *
+ * Screenshots live at /hulp-img/ (not /hulp/img/) because nginx would
+ * otherwise see a real /hulp directory under its document root and 403
+ * the SPA route. Separate namespaces = no directory/route collision.
  */
 function rewriteUrl(url: string): string {
   if (!url) return url;
@@ -47,7 +51,7 @@ function rewriteUrl(url: string): string {
     return url;
   }
   if (url.startsWith("./img/") || url.startsWith("img/")) {
-    return url.replace(/^\.?\/?img\//, "/hulp/img/");
+    return url.replace(/^\.?\/?img\//, "/hulp-img/");
   }
   // ./README.md → /hulp, ./viewer.md → /hulp/viewer, preserve ?query#hash.
   const mdMatch = url.match(/^\.?\/?([^#?]+?)\.md(.*)$/);

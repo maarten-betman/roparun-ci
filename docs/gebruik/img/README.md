@@ -2,12 +2,16 @@
 
 De Nederlandstalige handleiding verwijst naar de bestanden hieronder.
 
-> **Waar plaats ik de PNG's?** Zet ze in **`frontend/public/hulp/img/`**,
-> niet hier. Die map wordt door de site geserveerd op `/hulp/img/...`, en
-> de markdown-renderer herschrijft `./img/<naam>.png` automatisch naar
-> `/hulp/img/<naam>.png`. Eén opslagplek; deze README blijft in `docs/`
+> **Waar plaats ik de PNG's?** Zet ze in **`frontend/public/hulp-img/`**,
+> niet hier. Die map wordt door de site geserveerd op `/hulp-img/...`,
+> en de markdown-renderer herschrijft `./img/<naam>.png` automatisch naar
+> `/hulp-img/<naam>.png`. Eén opslagplek; deze README blijft in `docs/`
 > voor developers die de checklist bij de hand willen zonder de
 > frontend-assets te openen.
+>
+> (De bestanden staan op `/hulp-img/` in plaats van `/hulp/img/` om te
+> voorkomen dat nginx een fysieke `/hulp`-directory detecteert en de
+> SPA-route met een 403 beantwoordt.)
 
 Framing-tips:
 

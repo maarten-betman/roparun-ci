@@ -182,13 +182,24 @@
   }
 }
 
-/* Drawer that the hamburger toggles. Positioned just under the topbar,
- * full-width, closes on scrim click / Escape / link activation. */
+/* Drawer that the hamburger toggles. Always in the DOM (so focus traps /
+ * aria-hidden toggles work cleanly) but slides in/out with .is-open. */
 .topbar__drawer-scrim {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.35);
+  background: rgba(15, 23, 42, 0);
   z-index: 4;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 180ms ease,
+    background-color 180ms ease;
+}
+.topbar__drawer-scrim.is-open {
+  background: rgba(15, 23, 42, 0.45);
+  opacity: 1;
+  pointer-events: auto;
+  backdrop-filter: blur(2px);
 }
 .topbar__drawer {
   position: fixed;
@@ -197,30 +208,170 @@
   right: 0;
   background: var(--color-roparun-blue);
   color: #fff;
-  box-shadow: var(--shadow-topbar);
-  padding: var(--space-3) var(--space-4);
+  box-shadow:
+    0 10px 24px -6px rgba(0, 0, 0, 0.35),
+    0 4px 8px -2px rgba(0, 0, 0, 0.2);
+  padding: var(--space-4) var(--space-4) var(--space-5);
   z-index: 5;
+  transform: translateY(-8px);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 160ms ease;
+  border-bottom-left-radius: 14px;
+  border-bottom-right-radius: 14px;
+  max-width: 420px;
+  margin: 0 auto;
+  max-height: calc(100vh - var(--topbar-height) - 16px);
+  overflow-y: auto;
 }
+@media (min-width: 721px) {
+  .topbar__drawer,
+  .topbar__drawer-scrim {
+    /* Hamburger + drawer are mobile-only; keep the desktop experience
+     * untouched even if a user triggers the menuOpen state. */
+    display: none;
+  }
+}
+.topbar__drawer.is-open {
+  transform: translateY(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.topbar__drawer-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-2) var(--space-3);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  margin-bottom: var(--space-3);
+}
+.topbar__drawer-logo {
+  height: 22px;
+  width: auto;
+  background: #fff;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  flex: none;
+}
+.topbar__drawer-brand {
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  line-height: 1.2;
+}
+.topbar__drawer-brand-sub {
+  font-size: var(--fs-eyebrow);
+  color: #c7d2fe;
+  margin-top: 2px;
+}
+
 .topbar__drawer-nav {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 .topbar__drawer-link {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
   padding: 12px 14px;
-  font-size: var(--fs-body);
-  color: rgba(255, 255, 255, 0.85);
+  color: rgba(255, 255, 255, 0.86);
   text-decoration: none;
   border-radius: var(--radius-md);
   font-family: inherit;
+  position: relative;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease,
+    transform 120ms ease;
 }
-.topbar__drawer-link:hover {
+.topbar__drawer-link::before {
+  /* Left accent bar — hidden until active. */
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 2px;
+  background: transparent;
+  transition: background-color 120ms ease;
+}
+.topbar__drawer-link:hover,
+.topbar__drawer-link:focus-visible {
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  outline: none;
+}
+.topbar__drawer-link:active {
+  transform: scale(0.98);
+}
+.topbar__drawer-link.is-active {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+.topbar__drawer-link.is-active::before {
+  background: #facc15;
+}
+
+.topbar__drawer-icon {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
   background: rgba(255, 255, 255, 0.08);
-  color: #fff;
+  color: #e0e7ff;
+  transition: background-color 120ms ease;
 }
-.topbar__drawer-link--active {
-  background: rgba(255, 255, 255, 0.14);
-  color: #fff;
+.topbar__drawer-link.is-active .topbar__drawer-icon {
+  background: rgba(250, 204, 21, 0.18);
+  color: #fde68a;
+}
+
+.topbar__drawer-label {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+.topbar__drawer-title {
+  font-size: var(--fs-body);
   font-weight: 600;
+}
+.topbar__drawer-subtitle {
+  font-size: var(--fs-eyebrow);
+  color: rgba(199, 210, 254, 0.75);
+  margin-top: 2px;
+}
+.topbar__drawer-link.is-active .topbar__drawer-subtitle {
+  color: rgba(253, 230, 138, 0.8);
+}
+
+.topbar__drawer-chevron {
+  color: rgba(255, 255, 255, 0.35);
+  display: grid;
+  place-items: center;
+  flex: none;
+  transition:
+    color 120ms ease,
+    transform 120ms ease;
+}
+.topbar__drawer-link:hover .topbar__drawer-chevron,
+.topbar__drawer-link.is-active .topbar__drawer-chevron {
+  color: rgba(255, 255, 255, 0.75);
+  transform: translateX(2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .topbar__drawer,
+  .topbar__drawer-scrim,
+  .topbar__drawer-link,
+  .topbar__drawer-chevron {
+    transition: none;
+  }
 }

@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import "../styles/tokens.css";
+import { Hulp } from "../hulp/Hulp";
 import { Planner } from "../planner/Planner";
 import { Viewer } from "./Viewer";
 
@@ -14,6 +15,7 @@ const DEFAULT_PUBLIC_PATH = "conclusion/2026";
 function pickView() {
   const path = window.location.pathname;
   if (path.startsWith("/planner")) return <Planner apiKey={apiKey} />;
+  if (path.startsWith("/hulp")) return <Hulp />;
   // `/t/:slug/:year` → public route for a given team + year.
   const m = path.match(/^\/t\/([^/]+)\/([^/]+)/);
   if (m) return <Viewer apiKey={apiKey} publicPath={`${m[1]}/${m[2]}`} />;

@@ -1,8 +1,13 @@
 # Screenshots voor de handleiding
 
 De Nederlandstalige handleiding verwijst naar de bestanden hieronder.
-Plaats elke screenshot als `.png` in deze map met **exact** de
-voorgeschreven bestandsnaam — dan vallen ze automatisch op hun plek.
+
+> **Waar plaats ik de PNG's?** Zet ze in **`frontend/public/hulp/img/`**,
+> niet hier. Die map wordt door de site geserveerd op `/hulp/img/...`, en
+> de markdown-renderer herschrijft `./img/<naam>.png` automatisch naar
+> `/hulp/img/<naam>.png`. Eén opslagplek; deze README blijft in `docs/`
+> voor developers die de checklist bij de hand willen zonder de
+> frontend-assets te openen.
 
 Framing-tips:
 

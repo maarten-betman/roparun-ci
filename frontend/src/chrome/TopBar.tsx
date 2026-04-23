@@ -11,13 +11,14 @@ export interface TopBarProps {
   /** Optional actions rendered on the right (buttons). */
   actions?: React.ReactNode;
   /** Current page key — drives the highlighted item in the nav row. */
-  currentPage?: "viewer" | "planner" | "tracker";
+  currentPage?: "viewer" | "planner" | "tracker" | "hulp";
 }
 
-const NAV_ITEMS: { key: "viewer" | "planner" | "tracker"; label: string; href: string }[] = [
+const NAV_ITEMS: { key: "viewer" | "planner" | "tracker" | "hulp"; label: string; href: string }[] = [
   { key: "viewer", label: "Viewer", href: "/" },
   { key: "planner", label: "Planner", href: "/planner" },
   { key: "tracker", label: "Tracker", href: "/tracker.html" },
+  { key: "hulp", label: "Hulp", href: "/hulp" },
 ];
 
 /** Top bar with Conclusion Intelligence branding. Used by Viewer and Planner.

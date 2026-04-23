@@ -30,6 +30,46 @@
   display: block;
 }
 
+/* Hamburger button — only rendered visually on mobile (see breakpoint). */
+.topbar__hamburger {
+  display: none;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  position: relative;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+}
+.topbar__hamburger:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.topbar__hamburger-bar {
+  display: block;
+  width: 20px;
+  height: 2px;
+  background: #fff;
+  border-radius: 1px;
+  transition:
+    transform 150ms ease,
+    opacity 150ms ease;
+  transform-origin: center;
+}
+.topbar__hamburger-bar.is-x-top {
+  transform: translateY(6px) rotate(45deg);
+}
+.topbar__hamburger-bar.is-x-mid {
+  opacity: 0;
+}
+.topbar__hamburger-bar.is-x-bot {
+  transform: translateY(-6px) rotate(-45deg);
+}
+
 .topbar__divider {
   width: 1px;
   height: 22px;
@@ -115,27 +155,72 @@
   background: #f3f4f6;
 }
 
-/* Mobile: condense the top bar to stay usable on narrow phones. Nav stays
- * visible (crew needs to hop between viewer/planner/tracker from a phone)
- * but loses its left margin + per-link horizontal padding to earn the space
- * back from the hidden meta/pill. */
+/* Mobile: condense the top bar and swap the logo slot for a hamburger.
+ * The logo chip + inline nav + concept pill + meta line all take space we
+ * can't afford on phones; the drawer below covers everything a crew member
+ * needs to jump between pages. */
 @media (max-width: 720px) {
   .topbar {
-    padding: 0 var(--space-4);
+    padding: 0 var(--space-3);
     gap: var(--space-3);
   }
+  .topbar__hamburger {
+    display: flex;
+  }
+  .topbar__logo-chip,
+  .topbar__divider,
   .topbar__meta,
-  .topbar__pill {
+  .topbar__pill,
+  .topbar__nav {
     display: none;
   }
-  .topbar__nav {
-    margin-left: var(--space-2);
-    gap: 0;
-  }
-  .topbar__navlink {
-    padding: 6px 6px;
+  .topbar__title {
+    font-size: var(--fs-meta);
   }
   .topbar__btn {
     padding: 4px var(--space-3);
   }
+}
+
+/* Drawer that the hamburger toggles. Positioned just under the topbar,
+ * full-width, closes on scrim click / Escape / link activation. */
+.topbar__drawer-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.35);
+  z-index: 4;
+}
+.topbar__drawer {
+  position: fixed;
+  top: var(--topbar-height);
+  left: 0;
+  right: 0;
+  background: var(--color-roparun-blue);
+  color: #fff;
+  box-shadow: var(--shadow-topbar);
+  padding: var(--space-3) var(--space-4);
+  z-index: 5;
+}
+.topbar__drawer-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.topbar__drawer-link {
+  display: block;
+  padding: 12px 14px;
+  font-size: var(--fs-body);
+  color: rgba(255, 255, 255, 0.85);
+  text-decoration: none;
+  border-radius: var(--radius-md);
+  font-family: inherit;
+}
+.topbar__drawer-link:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+.topbar__drawer-link--active {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-weight: 600;
 }

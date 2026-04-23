@@ -115,16 +115,25 @@
   background: #f3f4f6;
 }
 
-/* Mobile: condense the top bar to stay usable on narrow phones. */
+/* Mobile: condense the top bar to stay usable on narrow phones. Nav stays
+ * visible (crew needs to hop between viewer/planner/tracker from a phone)
+ * but loses its left margin + per-link horizontal padding to earn the space
+ * back from the hidden meta/pill. */
 @media (max-width: 720px) {
   .topbar {
     padding: 0 var(--space-4);
     gap: var(--space-3);
   }
   .topbar__meta,
-  .topbar__pill,
-  .topbar__nav {
+  .topbar__pill {
     display: none;
+  }
+  .topbar__nav {
+    margin-left: var(--space-2);
+    gap: 0;
+  }
+  .topbar__navlink {
+    padding: 6px 6px;
   }
   .topbar__btn {
     padding: 4px var(--space-3);

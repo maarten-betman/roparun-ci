@@ -13,7 +13,11 @@ import {
   snapToTrack,
   type LngLat,
 } from "../map/trackMath";
+import { PairingPanel } from "./PairingPanel";
 import "./planner.css";
+
+const PAIRING_TEAM_SLUG = "conclusion";
+const PAIRING_YEAR = 2026;
 
 interface PlannerProps {
   apiKey: string | undefined;
@@ -818,6 +822,8 @@ export function Planner({ apiKey }: PlannerProps) {
                   </div>
                 )}
               </section>
+
+              <PairingPanel teamSlug={PAIRING_TEAM_SLUG} year={PAIRING_YEAR} />
 
               {/* Pace setting drives the time-from-start estimates for each
                   team change. Defaults to 12 km/h (a typical Roparun relay

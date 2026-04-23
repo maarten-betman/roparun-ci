@@ -7,6 +7,15 @@ import type {
   UUID,
 } from "./types";
 
+export type DeviceRole = "runner" | "cyclist" | "driver" | "medic" | "other";
+
+export interface PairingTokenOut {
+  token: string;
+  role: DeviceRole;
+  expires_at: string;
+  url_path: string;
+}
+
 const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "/api";
 
 async function j<T>(path: string, init?: RequestInit): Promise<T> {
@@ -45,4 +54,11 @@ export const api = {
     return (await res.json()) as RouteDetail;
   },
   gpxDownloadUrl: (id: UUID) => `${BASE}/routes/${id}/gpx`,
+
+  // QR pairing.
+  createPairingToken: (body: { team_slug: string; year: number; role: DeviceRole }) =>
+    j<PairingTokenOut>("/pairing-tokens", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 };

@@ -116,3 +116,26 @@ class ChangeEventBroadcast(BaseModel):
 
     type: str = "change_event"
     event: ChangeEventOut
+
+
+class PairingTokenCreate(BaseModel):
+    """Planner mints a pairing token for a future device of a given role."""
+
+    team_slug: str = Field(min_length=1, max_length=64)
+    year: int = Field(ge=1900, le=2100)
+    role: DeviceRole
+
+
+class PairingTokenOut(BaseModel):
+    token: str
+    role: DeviceRole
+    expires_at: datetime
+    url_path: str  # e.g. "/tracker.html?pair=..."
+
+
+class DeviceFromPairing(BaseModel):
+    """Body for POST /devices/from-pairing — the tracker sends the token it
+    read from its URL plus whatever name the crew member typed."""
+
+    token: str = Field(min_length=1, max_length=64)
+    name: str = Field(min_length=1, max_length=120)

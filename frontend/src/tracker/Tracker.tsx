@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState } from "react";
 import type { DeviceRole, StoredCredentials } from "./api";
-import { registerDevice } from "./api";
+import { redeemPairingToken, registerDevice } from "./api";
 import { useWatch } from "./useWatch";
 import "./tracker.css";
 
@@ -33,8 +33,40 @@ function clearCreds(): void {
   localStorage.removeItem(CREDS_KEY);
 }
 
+/** Look for ?pair=<token> in the URL. Strip it from the address bar once
+ *  we've captured it so a refresh doesn't try to re-redeem a one-shot
+ *  token. */
+function consumePairToken(): string | null {
+  try {
+    const url = new URL(window.location.href);
+    const t = url.searchParams.get("pair");
+    if (!t) return null;
+    url.searchParams.delete("pair");
+    window.history.replaceState({}, "", url.toString());
+    return t;
+  } catch {
+    return null;
+  }
+}
+
 export function Tracker() {
   const [creds, setCreds] = useState<StoredCredentials | null>(() => loadCreds());
+  const [pendingPair, setPendingPair] = useState<string | null>(() =>
+    loadCreds() ? null : consumePairToken(),
+  );
+  if (!creds && pendingPair) {
+    return (
+      <PairViaToken
+        token={pendingPair}
+        onPaired={(c) => {
+          saveCreds(c);
+          setCreds(c);
+          setPendingPair(null);
+        }}
+        onCancel={() => setPendingPair(null)}
+      />
+    );
+  }
   if (!creds) {
     return (
       <Pair
@@ -63,6 +95,71 @@ export function Tracker() {
 // event. If we ever host a second team we'll re-introduce a picker.
 const DEFAULT_TEAM_SLUG = "conclusion";
 const DEFAULT_YEAR = 2026;
+
+function PairViaToken({
+  token,
+  onPaired,
+  onCancel,
+}: {
+  token: string;
+  onPaired: (c: StoredCredentials) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const serverCreds = await redeemPairingToken({ token, name: name.trim() });
+      onPaired({
+        ...serverCreds,
+        team_slug: DEFAULT_TEAM_SLUG,
+        year: DEFAULT_YEAR,
+      });
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form className="tracker" onSubmit={submit}>
+      <h1>Roparun Tracker</h1>
+      <p className="tracker__lede">
+        Welcome — someone sent you a pairing link. The role has already been
+        set; we just need your name.
+      </p>
+      <label className="tracker__field">
+        <span>Your name</span>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="e.g. Eva"
+          autoFocus
+          required
+        />
+      </label>
+      {error && <div className="tracker__error">{error}</div>}
+      <button type="submit" className="tracker__cta" disabled={busy || !name.trim()}>
+        {busy ? "Pairing…" : "Start streaming"}
+      </button>
+      <button
+        type="button"
+        className="tracker__unpair"
+        onClick={onCancel}
+        style={{ alignSelf: "center", marginTop: 4 }}
+      >
+        Cancel and pair manually instead
+      </button>
+      <p className="tracker__fineprint">Conclusion Intelligence · Roparun 2026</p>
+    </form>
+  );
+}
 
 function Pair({ onPaired }: { onPaired: (c: StoredCredentials) => void }) {
   const [name, setName] = useState("");

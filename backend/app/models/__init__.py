@@ -1,6 +1,7 @@
 from .change_event import ChangeEvent
 from .device import Device, DeviceRole
 from .event import Event
+from .pairing_token import PairingToken
 from .position import Position
 from .route import Route, RouteStatus
 from .stage import Stage
@@ -12,6 +13,7 @@ __all__ = [
     "Device",
     "DeviceRole",
     "Event",
+    "PairingToken",
     "Position",
     "Route",
     "RouteStatus",

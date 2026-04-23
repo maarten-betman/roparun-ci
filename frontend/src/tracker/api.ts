@@ -38,6 +38,22 @@ export async function registerDevice(body: {
   return (await res.json()) as DeviceCredentials;
 }
 
+/** Redeem a pairing token (from `?pair=<token>` in the URL) into a
+ *  persistent device + bearer credentials. The role comes from the
+ *  token, so the UI only needs to ask for a name. */
+export async function redeemPairingToken(body: {
+  token: string;
+  name: string;
+}): Promise<DeviceCredentials> {
+  const res = await fetch(`${BASE}/devices/from-pairing`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+  return (await res.json()) as DeviceCredentials;
+}
+
 export async function ingestPositions(
   token: string,
   positions: QueuedPosition[],

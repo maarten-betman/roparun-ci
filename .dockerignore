@@ -1,0 +1,38 @@
+# Docker build context at the repo root is used by the web service (needs
+# frontend/ + docs/). Keep the context small so builds stay fast.
+.git
+.github
+.vscode
+.idea
+
+# Node / frontend build output — rebuilt inside the container.
+frontend/node_modules
+frontend/dist
+frontend/.vite
+frontend/coverage
+
+# Python / backend artefacts — the api service has its own context
+# (./backend) and doesn't see this file, but keep these ignored for
+# completeness in case a future service copies backend/ via the root.
+**/__pycache__
+**/*.pyc
+backend/.venv
+backend/.pytest_cache
+backend/.ruff_cache
+backend/.mypy_cache
+backend/htmlcov
+backend/dist
+backend/build
+
+# Secrets / env files — never bake into an image.
+.env
+.env.*
+!.env.prod.example
+
+# Editor scratch.
+*.swp
+*.swo
+.DS_Store
+
+# Large input data we don't need at web-build time.
+# (docs/ is deliberately NOT ignored — the Hulp page imports from it.)

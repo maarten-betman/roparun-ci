@@ -52,8 +52,10 @@ services:
 
   web:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      # Context is the repo root so the Dockerfile can COPY both frontend/
+      # and docs/ — the Hulp page imports docs/gebruik/*.md via Vite ?raw.
+      context: .
+      dockerfile: frontend/Dockerfile
       args:
         VITE_MAPTILER_KEY: ${VITE_MAPTILER_KEY:-}
     restart: unless-stopped

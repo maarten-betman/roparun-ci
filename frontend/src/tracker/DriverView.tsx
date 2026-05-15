@@ -307,13 +307,23 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
   }, [selfPos]);
 
   // ---------- Change events ----------
+  // Only the most recent change is drawn on the map. Older ones stay in
+  // state (so the WS handler's de-duplication still works), but rendering
+  // them indefinitely as red dots clutters the map after a few handovers —
+  // by the time the team is on leg 4 there's a trail of irrelevant dots
+  // from earlier legs. `lastChange` keeps using `changeEvents[0]` so the
+  // next-expected marker is unaffected.
+  const visibleChangeEvents = useMemo(
+    () => (changeEvents.length > 0 ? [changeEvents[0]] : []),
+    [changeEvents],
+  );
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
     const apply = () =>
       (map.getSource("change-events") as maplibregl.GeoJSONSource | undefined)?.setData({
         type: "FeatureCollection",
-        features: changeEvents.map((c) => ({
+        features: visibleChangeEvents.map((c) => ({
           type: "Feature",
           properties: { name: c.device_name },
           geometry: { type: "Point", coordinates: [c.lng, c.lat] },
@@ -321,7 +331,7 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
       });
     if (map.isStyleLoaded()) apply();
     else map.once("load", apply);
-  }, [changeEvents]);
+  }, [visibleChangeEvents]);
 
   // ---------- Handover segment + auto-fit ----------
   useEffect(() => {

@@ -50,6 +50,50 @@ function fmtKm(meters: number | null | undefined): string {
   return `${(meters / 1000).toFixed(1)} km`;
 }
 
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/** Tooltip body rendered when the planner hovers a team-change marker.
+ *  Mirrors the per-row info from the sidebar list so the user gets the
+ *  same context without taking their eyes off the map. */
+function renderTcPopupHtml(opts: {
+  index: number;
+  name: string;
+  cumKm: number;
+  segmentKm: number;
+  eta: string;
+  offsetMin: number;
+  cumOffsetMin: number;
+}): string {
+  const label = opts.name.trim() || `Wissel #${opts.index + 1}`;
+  const offsetBadge =
+    opts.offsetMin !== 0
+      ? `<span style="color:#9ca3af"> (${opts.offsetMin > 0 ? "+" : ""}${opts.offsetMin}m deze etappe)</span>`
+      : "";
+  const cumBadge =
+    opts.cumOffsetMin !== 0 && opts.cumOffsetMin !== opts.offsetMin
+      ? `<span style="color:#9ca3af"> (${opts.cumOffsetMin > 0 ? "+" : ""}${opts.cumOffsetMin}m cumulatief)</span>`
+      : "";
+  return `
+    <div style="font-family:inherit;font-size:12px;line-height:1.4;min-width:160px">
+      <div style="font-weight:600;color:#111827;margin-bottom:2px">${escapeHtml(label)}</div>
+      <div style="color:#6b7280">
+        km ${opts.cumKm.toFixed(1)}
+        <span style="color:#9ca3af">(+${opts.segmentKm.toFixed(1)} km deze etappe)</span>
+      </div>
+      <div style="color:#111827;margin-top:2px">
+        <strong>${escapeHtml(opts.eta)}</strong>${cumBadge}${offsetBadge}
+      </div>
+    </div>
+  `;
+}
+
 function loadPaceMinKm(): number {
   const raw = localStorage.getItem(PACE_KEY);
   const n = raw ? Number(raw) : NaN;
@@ -124,6 +168,7 @@ export function Planner({ apiKey }: PlannerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
+  const popupsRef = useRef<Map<string, maplibregl.Popup>>(new Map());
   const [mapReady, setMapReady] = useState(false);
   const [routes, setRoutes] = useState<RouteSummary[]>([]);
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
@@ -259,6 +304,8 @@ export function Planner({ apiKey }: PlannerProps) {
       ro.disconnect();
       for (const m of markersRef.current.values()) m.remove();
       markersRef.current.clear();
+      for (const p of popupsRef.current.values()) p.remove();
+      popupsRef.current.clear();
       map.remove();
       mapRef.current = null;
       setMapReady(false);
@@ -332,17 +379,21 @@ export function Planner({ apiKey }: PlannerProps) {
   }, [detail?.id, runnersTrack, runnersCum]);
 
   // Reconcile DOM Markers with the teamChanges state: create for new, move
-  // for existing, remove for deleted. One Marker per key, kept alive
-  // across renders.
+  // for existing, remove for deleted. One Marker (+ one Popup) per key,
+  // kept alive across renders. Effect re-runs on pace/start changes so
+  // the popup's ETA stays fresh without leaking handlers.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
-    const have = markersRef.current;
+    const haveM = markersRef.current;
+    const haveP = popupsRef.current;
     const keep = new Set<string>();
 
-    for (const tc of teamChanges) {
+    for (let i = 0; i < teamChanges.length; i++) {
+      const tc = teamChanges[i];
       keep.add(tc.key);
-      let m = have.get(tc.key);
+      let m = haveM.get(tc.key);
+      let p = haveP.get(tc.key);
       if (!m) {
         const el = document.createElement("div");
         el.className = "planner__tc";
@@ -371,18 +422,59 @@ export function Planner({ apiKey }: PlannerProps) {
           );
         });
         m.setLngLat([tc.lng, tc.lat]).addTo(map);
-        have.set(tc.key, m);
+        haveM.set(tc.key, m);
+
+        // Hover popup. `setHTML` further down keeps the body fresh on
+        // every effect tick; the listeners just toggle visibility.
+        p = new maplibregl.Popup({
+          offset: 18,
+          closeButton: false,
+          closeOnClick: false,
+          className: "planner__tc-popup",
+        });
+        const mRef = m;
+        const pRef = p;
+        el.addEventListener("mouseenter", () => {
+          pRef.setLngLat(mRef.getLngLat()).addTo(map);
+        });
+        el.addEventListener("mouseleave", () => pRef.remove());
+        // Hide during drag so the popup doesn't trail the marker (it
+        // doesn't reposition mid-drag) and so it doesn't intercept
+        // pointer events from the dragger.
+        m.on("dragstart", () => pRef.remove());
+        haveP.set(tc.key, p);
       } else {
         m.setLngLat([tc.lng, tc.lat]);
       }
+      // Refresh the popup body for every row, every tick — the
+      // cumulative offset depends on rows before this one and on pace +
+      // start moment, all of which change independently.
+      const prevAlongM = i === 0 ? 0 : teamChanges[i - 1].alongM;
+      const segmentKm = Math.max(0, tc.alongM - prevAlongM) / 1000;
+      const cumOffsetMin = teamChanges
+        .slice(0, i + 1)
+        .reduce((sum, x) => sum + x.offsetMin, 0);
+      p!.setHTML(
+        renderTcPopupHtml({
+          index: i,
+          name: tc.name,
+          cumKm: tc.alongM / 1000,
+          segmentKm,
+          eta: fmtTeamChangeTime(tc.alongM, paceMinKm, startAt, cumOffsetMin),
+          offsetMin: tc.offsetMin,
+          cumOffsetMin,
+        }),
+      );
     }
-    for (const [key, m] of have) {
+    for (const [key, m] of haveM) {
       if (!keep.has(key)) {
         m.remove();
-        have.delete(key);
+        haveM.delete(key);
+        haveP.get(key)?.remove();
+        haveP.delete(key);
       }
     }
-  }, [teamChanges, mapReady]);
+  }, [teamChanges, mapReady, paceMinKm, startAt]);
 
   // ---- Snip editor (runners track) ----
 

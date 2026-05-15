@@ -2,7 +2,7 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client";
-import type { RouteDetail, RouteSummary, Stage, Waypoint } from "../api/types";
+import type { RouteDetail, RouteSummary, Stage } from "../api/types";
 import { TopBar, TopBarButton } from "../chrome/TopBar";
 import { DEFAULT_CENTER, DEFAULT_ZOOM, mapStyle } from "../map/style";
 import {
@@ -66,34 +66,33 @@ function loadPaceMinKm(): number {
   return DEFAULT_PACE_MIN_PER_KM;
 }
 
+/** Roparun 2026 starts Whit-Saturday (23 May) at 15:00 local time. We
+ *  default the planner to that so a fresh planner already shows real
+ *  wall-clock times; the user can still clear or override. */
+const DEFAULT_START_AT = new Date(2026, 4, 23, 15, 0); // month is 0-indexed.
+
 function loadStartAt(): Date | null {
   const raw = localStorage.getItem(START_KEY);
-  if (!raw) return null;
+  // Key absent → first load, fall back to the default.
+  if (raw === null) return DEFAULT_START_AT;
+  // Empty string → user deliberately cleared the field, respect that.
+  if (raw === "") return null;
   const d = new Date(raw);
-  return Number.isFinite(d.getTime()) ? d : null;
+  return Number.isFinite(d.getTime()) ? d : DEFAULT_START_AT;
 }
 
-function routeFeatureCollection(stages: Stage[]): GeoJSON.FeatureCollection {
+/** The planner only paints the runners track. Vehicle overlays and the
+ *  24k+ POI clouds are a viewer concern — in the planner they'd swamp
+ *  the team-change drag handles and the snip editor's interactions. */
+function runnersFeatureCollection(stages: Stage[]): GeoJSON.FeatureCollection {
   return {
     type: "FeatureCollection",
-    features: stages.map((s) => ({
-      type: "Feature",
-      properties: { ordinal: s.ordinal, color: stageColor(s.ordinal) },
-      geometry: s.geom,
-    })),
-  };
-}
-
-function waypointFeatureCollection(waypoints: Waypoint[]): GeoJSON.FeatureCollection {
-  // Skip team_changes here — they render as interactive DOM markers below.
-  return {
-    type: "FeatureCollection",
-    features: waypoints
-      .filter((w) => w.category !== TEAM_CHANGE_CATEGORY)
-      .map((w) => ({
+    features: stages
+      .filter((s) => s.layer === "runners")
+      .map((s) => ({
         type: "Feature",
-        properties: { kind: w.kind, name: w.name ?? "" },
-        geometry: w.geom,
+        properties: { ordinal: s.ordinal, color: stageColor(s.ordinal) },
+        geometry: s.geom,
       })),
   };
 }
@@ -212,21 +211,6 @@ export function Planner({ apiKey }: PlannerProps) {
         source: "stages",
         paint: { "line-color": ["get", "color"], "line-width": 4 },
       });
-      map.addSource("waypoints", {
-        type: "geojson",
-        data: { type: "FeatureCollection", features: [] },
-      });
-      map.addLayer({
-        id: "waypoints-circle",
-        type: "circle",
-        source: "waypoints",
-        paint: {
-          "circle-radius": 5,
-          "circle-color": "#fff",
-          "circle-stroke-width": 2,
-          "circle-stroke-color": "#0b3d91",
-        },
-      });
       // Snip window: red glow under the runners line for the portion
       // the user has selected to remove.
       map.addSource("snip-window", {
@@ -286,14 +270,12 @@ export function Planner({ apiKey }: PlannerProps) {
     const map = mapRef.current;
     if (!map || !mapReady || !detail) return;
     (map.getSource("stages") as maplibregl.GeoJSONSource | undefined)?.setData(
-      routeFeatureCollection(detail.stages),
+      runnersFeatureCollection(detail.stages),
     );
-    (map.getSource("waypoints") as maplibregl.GeoJSONSource | undefined)?.setData(
-      waypointFeatureCollection(detail.waypoints),
-    );
-    if (detail.stages.length > 0) {
+    const runnersStages = detail.stages.filter((s) => s.layer === "runners");
+    if (runnersStages.length > 0) {
       const bounds = new maplibregl.LngLatBounds();
-      for (const s of detail.stages) for (const c of s.geom.coordinates) bounds.extend(c);
+      for (const s of runnersStages) for (const c of s.geom.coordinates) bounds.extend(c);
       if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 40, duration: 400 });
     }
   }, [detail, mapReady]);
@@ -647,8 +629,10 @@ export function Planner({ apiKey }: PlannerProps) {
 
   const onStartAtChange = (raw: string) => {
     if (!raw) {
+      // Stash an empty string (not removeItem) so a future reload remembers
+      // "user deliberately cleared this" instead of re-applying the default.
       setStartAt(null);
-      localStorage.removeItem(START_KEY);
+      localStorage.setItem(START_KEY, "");
       return;
     }
     const d = new Date(raw);

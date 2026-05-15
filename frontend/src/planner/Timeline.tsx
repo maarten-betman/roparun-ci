@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { fmtTeamChangeTime, minutesFromStart } from "./paceTime";
 import "./timeline.css";
 
@@ -20,13 +20,21 @@ interface TimelineProps {
   onHoverDistance: (d: number | null) => void;
 }
 
-/** Picks tick interval (hours) that yields ~6–10 labels for the route. */
-function pickTickHours(totalHours: number): number {
-  if (totalHours <= 6) return 1;
-  if (totalHours <= 12) return 2;
-  if (totalHours <= 24) return 3;
-  if (totalHours <= 48) return 6;
-  return 12;
+/** Pick a tick interval (hours) that gives at least ~70 px per label
+ *  for the currently-measured bar width. Falls back to a coarser
+ *  spacing on phones so "za 15:00" labels don't crash into "za 21:00". */
+function pickTickHours(totalHours: number, barWidth: number): number {
+  // ~70 px per label keeps a "za 15:00" + margin from overlapping its
+  // neighbour. On a 1200 px desktop that's up to ~17 labels; on a
+  // ~340 px phone it caps us at ~4 labels.
+  const minLabelPx = 70;
+  const maxLabels = Math.max(2, Math.floor((barWidth || 800) / minLabelPx));
+  const minStep = totalHours / Math.max(1, maxLabels - 1);
+  const candidates = [0.5, 1, 2, 3, 4, 6, 8, 12, 24];
+  for (const c of candidates) {
+    if (c >= minStep) return c;
+  }
+  return Math.ceil(minStep);
 }
 
 /** Cumulative-offset at a point on the track: sum of offsets of every
@@ -49,6 +57,19 @@ export function Timeline({
   const barRef = useRef<HTMLDivElement | null>(null);
   const [hoverX, setHoverX] = useState<number | null>(null);
   const [hoverDistanceM, setHoverDistanceM] = useState<number | null>(null);
+  // Bar width tracked via ResizeObserver so the tick interval can drop
+  // labels on phones without losing them when rotating to landscape.
+  const [barWidth, setBarWidth] = useState(0);
+  useEffect(() => {
+    const el = barRef.current;
+    if (!el) return;
+    setBarWidth(el.clientWidth);
+    const ro = new ResizeObserver((entries) => {
+      setBarWidth(entries[0].contentRect.width);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const totalMinutes = useMemo(
     () => minutesFromStart(totalM, paceMinKm, 0),
@@ -61,7 +82,7 @@ export function Timeline({
   const ticks = useMemo(() => {
     if (totalM <= 0 || paceMinKm <= 0) return [];
     const totalHours = totalMinutes / 60;
-    const step = pickTickHours(totalHours);
+    const step = pickTickHours(totalHours, barWidth);
     const out: { mins: number; label: string }[] = [];
     for (let h = 0; h <= totalHours + 0.001; h += step) {
       const mins = h * 60;
@@ -75,7 +96,7 @@ export function Timeline({
       out.push({ mins, label });
     }
     return out;
-  }, [totalM, totalMinutes, paceMinKm, startAt]);
+  }, [totalM, totalMinutes, paceMinKm, startAt, barWidth]);
 
   const onMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     const bar = barRef.current;

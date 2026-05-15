@@ -64,7 +64,7 @@
   top: 50%;
   width: 1px;
   height: 12px;
-  background: #d1d5db;
+  background: rgba(107, 114, 128, 0.28);
   transform: translate(-50%, -50%);
   pointer-events: none;
 }

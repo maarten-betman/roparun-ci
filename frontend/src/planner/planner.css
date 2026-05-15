@@ -17,3 +17,16 @@
 .planner__tc:active {
   cursor: grabbing;
 }
+
+/* Ghost marker dropped on the map by the Timeline scrubber. Visually a
+ * small navy dot inside a white ring — distinct from team-change pips
+ * so the user knows it's transient. */
+.planner__hover {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--color-roparun-blue, #0b3d91);
+  border: 3px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}

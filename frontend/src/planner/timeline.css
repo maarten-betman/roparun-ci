@@ -1,0 +1,112 @@
+/* Bottom-of-map scrubber. Two stacked rows: an axis with wall-clock
+ * labels and a track with team-change pips. Hovering shows a vertical
+ * cursor + a floating tooltip; the parent uses the hovered distance
+ * to drop a ghost marker on the map. */
+.planner__timeline {
+  position: relative;
+  flex: none;
+  height: 72px;
+  background: linear-gradient(180deg, #ffffff 0%, #f9fafb 100%);
+  border-top: 1px solid #e5e7eb;
+  padding: 8px 16px 4px;
+  font-family: system-ui, sans-serif;
+  user-select: none;
+  cursor: crosshair;
+}
+
+.planner__timeline--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9ca3af;
+  font-size: 12px;
+  cursor: default;
+}
+
+.planner__timeline-axis {
+  position: relative;
+  height: 14px;
+  font-size: 10px;
+  color: #6b7280;
+}
+.planner__timeline-axis-label {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  pointer-events: none;
+}
+/* Anchor first/last labels so they don't clip the bar's left/right edge. */
+.planner__timeline-axis-label[style*="left: 0%"] {
+  transform: translateX(0);
+}
+.planner__timeline-axis-label[style*="left: 100%"] {
+  transform: translateX(-100%);
+}
+
+.planner__timeline-track {
+  position: relative;
+  height: 40px;
+  margin-top: 8px;
+}
+.planner__timeline-track-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 6px;
+  background: #e5e7eb;
+  border-radius: 3px;
+  transform: translateY(-50%);
+}
+.planner__timeline-tick {
+  position: absolute;
+  top: 50%;
+  width: 1px;
+  height: 12px;
+  background: #d1d5db;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.planner__timeline-pip {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  background: #f43f5e;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  pointer-events: auto;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.planner__timeline-cursor {
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  width: 2px;
+  background: var(--color-roparun-blue, #0b3d91);
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.planner__timeline-tip {
+  position: absolute;
+  top: -30px;
+  background: #111827;
+  color: #fff;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  z-index: 3;
+}
+.planner__timeline-tip-offset {
+  color: #9ca3af;
+}

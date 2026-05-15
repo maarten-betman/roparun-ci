@@ -20,6 +20,7 @@ import {
   parsePaceMinKm,
   toDateTimeLocalValue,
 } from "./paceTime";
+import { Timeline } from "./Timeline";
 import "./planner.css";
 
 const PAIRING_TEAM_SLUG = "conclusion";
@@ -169,6 +170,8 @@ export function Planner({ apiKey }: PlannerProps) {
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
   const popupsRef = useRef<Map<string, maplibregl.Popup>>(new Map());
+  const hoverMarkerRef = useRef<maplibregl.Marker | null>(null);
+  const [hoverDistanceM, setHoverDistanceM] = useState<number | null>(null);
   const [mapReady, setMapReady] = useState(false);
   const [routes, setRoutes] = useState<RouteSummary[]>([]);
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
@@ -306,6 +309,8 @@ export function Planner({ apiKey }: PlannerProps) {
       markersRef.current.clear();
       for (const p of popupsRef.current.values()) p.remove();
       popupsRef.current.clear();
+      hoverMarkerRef.current?.remove();
+      hoverMarkerRef.current = null;
       map.remove();
       mapRef.current = null;
       setMapReady(false);
@@ -475,6 +480,28 @@ export function Planner({ apiKey }: PlannerProps) {
       }
     }
   }, [teamChanges, mapReady, paceMinKm, startAt]);
+
+  // Ghost marker that follows the Timeline scrubber. Created lazily so
+  // an unused timeline doesn't pollute the map; removed when the cursor
+  // leaves the bar.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    if (hoverDistanceM == null || !runnersTrack || !runnersCum) {
+      hoverMarkerRef.current?.remove();
+      hoverMarkerRef.current = null;
+      return;
+    }
+    const [lng, lat] = pointAtDistance(runnersTrack, runnersCum, hoverDistanceM);
+    if (!hoverMarkerRef.current) {
+      const el = document.createElement("div");
+      el.className = "planner__hover";
+      hoverMarkerRef.current = new maplibregl.Marker({ element: el, anchor: "center" });
+      hoverMarkerRef.current.setLngLat([lng, lat]).addTo(map);
+    } else {
+      hoverMarkerRef.current.setLngLat([lng, lat]);
+    }
+  }, [hoverDistanceM, mapReady, runnersTrack, runnersCum]);
 
   // ---- Snip editor (runners track) ----
 
@@ -1325,7 +1352,23 @@ export function Planner({ apiKey }: PlannerProps) {
             </div>
           )}
         </aside>
-        <div ref={containerRef} style={{ position: "relative" }} />
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            minHeight: 0,
+            minWidth: 0,
+          }}
+        >
+          <div ref={containerRef} style={{ flex: 1, position: "relative" }} />
+          <Timeline
+            totalM={runnersTotalM}
+            startAt={startAt}
+            paceMinKm={paceMinKm}
+            teamChanges={teamChanges}
+            onHoverDistance={setHoverDistanceM}
+          />
+        </div>
       </div>
     </div>
   );

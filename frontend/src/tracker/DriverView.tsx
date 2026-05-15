@@ -9,6 +9,7 @@ import {
   nextChangePoint,
   pointAtDistance,
   sliceByDistance,
+  snapToTrack,
   type LngLat,
 } from "../map/trackMath";
 import { useWatch } from "./useWatch";
@@ -373,10 +374,22 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
     }
     setPosting(true);
     try {
+      // Snap the driver's GPS to the nearest point on the runners track
+      // before recording the handover. The change event semantically marks
+      // where the *runner* picks up, not where the support car parked —
+      // and during the race a B-vehicle can sit 10–15 m off-track on the
+      // shoulder. (When testing from home, the offset can be kilometres;
+      // without snapping, the next-expected marker would land in some
+      // arbitrary spot on the route.) Falls back to the raw GPS only if
+      // we somehow don't have the runners track loaded yet.
+      const [lng, lat] =
+        track && cum
+          ? snapToTrack(track, cum, selfPos).snap
+          : selfPos;
       const ev = await postChangeEvent(creds.token, {
         ts: new Date().toISOString(),
-        lng: selfPos[0],
-        lat: selfPos[1],
+        lng,
+        lat,
       });
       setChangeEvents((prev) => [ev, ...prev]);
     } catch (err) {

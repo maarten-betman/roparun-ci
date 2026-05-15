@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ageBucket, formatAge } from "./Sidebar";
+import { ageBucket, ARCHIVE_AGE_MS, formatAge, isArchived } from "./Sidebar";
 
 describe("ageBucket", () => {
   it("is fresh for 0–10s", () => {
@@ -33,5 +33,17 @@ describe("formatAge", () => {
   });
   it("clamps negatives (clock skew) to 'just now'", () => {
     expect(formatAge(-500)).toBe("just now");
+  });
+});
+
+describe("isArchived", () => {
+  it("keeps fresh and stale devices active up to the threshold", () => {
+    expect(isArchived(0)).toBe(false);
+    expect(isArchived(60_000)).toBe(false);
+    expect(isArchived(ARCHIVE_AGE_MS)).toBe(false);
+  });
+  it("archives anything past the threshold", () => {
+    expect(isArchived(ARCHIVE_AGE_MS + 1)).toBe(true);
+    expect(isArchived(60 * 60 * 1000)).toBe(true);
   });
 });

@@ -29,6 +29,18 @@ export function ageBucket(ageMs: number): LiveAge {
   return "stale";
 }
 
+/** After this much silence we stop treating a device as part of the
+ *  active fleet: it disappears from the map, gets moved to a
+ *  collapsible "Gearchiveerd" section in the sidebar, and stops
+ *  contributing to the live header count. Long enough for a Roparun
+ *  tunnel + dead-zone combo (~10 min worst case), short enough that a
+ *  forgotten Tracker tab doesn't clutter the map for hours. */
+export const ARCHIVE_AGE_MS = 15 * 60_000;
+
+export function isArchived(ageMs: number): boolean {
+  return ageMs > ARCHIVE_AGE_MS;
+}
+
 export function formatAge(ageMs: number): string {
   if (ageMs < 0) return "just now";
   const s = Math.round(ageMs / 1000);
@@ -88,6 +100,25 @@ export function Sidebar({
   now = Date.now(),
 }: SidebarProps) {
   const [open, setOpen] = useState(false); // mobile drawer state
+  const [showArchived, setShowArchived] = useState(false);
+
+  // Partition live devices into active vs archived once per `now` tick so
+  // both the count headings and the row sets stay in sync without
+  // recomputing inside the JSX. Sorted with newest fix first.
+  const { liveActive, liveArchived } = useMemo(() => {
+    const active: SidebarLiveDevice[] = [];
+    const archived: SidebarLiveDevice[] = [];
+    for (const d of liveDevices ?? []) {
+      const ageMs = Math.max(0, now - new Date(d.lastTs).getTime());
+      (isArchived(ageMs) ? archived : active).push(d);
+    }
+    const byNewest = (a: SidebarLiveDevice, b: SidebarLiveDevice) =>
+      new Date(b.lastTs).getTime() - new Date(a.lastTs).getTime();
+    return {
+      liveActive: active.sort(byNewest),
+      liveArchived: archived.sort(byNewest),
+    };
+  }, [liveDevices, now]);
 
   const wpCounts = useMemo(() => {
     if (!detail) return new Map<string, number>();
@@ -191,45 +222,99 @@ export function Sidebar({
               </div>
             </section>
 
-            {liveDevices && liveDevices.length > 0 && (
+            {(liveActive.length > 0 || liveArchived.length > 0) && (
               <section className="sidebar__section">
-                <h3>Live ({liveDevices.length})</h3>
-                <ul className="sidebar__list">
-                  {liveDevices.map((d) => {
-                    const ageMs = Math.max(0, now - new Date(d.lastTs).getTime());
-                    const bucket = ageBucket(ageMs);
-                    return (
-                      <li key={d.id} className="sidebar__row">
-                        <label className="sidebar__check">
-                          <span
-                            className={`sidebar__livedot sidebar__livedot--${bucket}`}
-                            title={`last fix ${formatAge(ageMs)}`}
-                            aria-hidden
-                          />
-                          <span className="sidebar__rowtext">
-                            {d.name}{" "}
-                            <span className="sidebar__rowmeta">
-                              · {d.role} · {formatAge(ageMs)}
-                              {d.battery_pct != null
-                                ? ` · 🔋 ${Math.round(d.battery_pct)}%`
-                                : ""}
+                <h3>Live ({liveActive.length})</h3>
+                {liveActive.length === 0 && (
+                  <div className="sidebar__empty">
+                    Geen actieve apparaten. Zie Gearchiveerd hieronder.
+                  </div>
+                )}
+                {liveActive.length > 0 && (
+                  <ul className="sidebar__list">
+                    {liveActive.map((d) => {
+                      const ageMs = Math.max(0, now - new Date(d.lastTs).getTime());
+                      const bucket = ageBucket(ageMs);
+                      return (
+                        <li key={d.id} className="sidebar__row">
+                          <label className="sidebar__check">
+                            <span
+                              className={`sidebar__livedot sidebar__livedot--${bucket}`}
+                              title={`last fix ${formatAge(ageMs)}`}
+                              aria-hidden
+                            />
+                            <span className="sidebar__rowtext">
+                              {d.name}{" "}
+                              <span className="sidebar__rowmeta">
+                                · {d.role} · {formatAge(ageMs)}
+                                {d.battery_pct != null
+                                  ? ` · 🔋 ${Math.round(d.battery_pct)}%`
+                                  : ""}
+                              </span>
                             </span>
-                          </span>
-                        </label>
-                        {onFlyToDevice && (
-                          <button
-                            type="button"
-                            className="sidebar__zoom"
-                            onClick={() => onFlyToDevice(d.id)}
-                            title="Fly to device"
-                          >
-                            ↗
-                          </button>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
+                          </label>
+                          {onFlyToDevice && (
+                            <button
+                              type="button"
+                              className="sidebar__zoom"
+                              onClick={() => onFlyToDevice(d.id)}
+                              title="Fly to device"
+                            >
+                              ↗
+                            </button>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+
+                {liveArchived.length > 0 && (
+                  <>
+                    <button
+                      type="button"
+                      className="sidebar__archive-toggle"
+                      onClick={() => setShowArchived((v) => !v)}
+                      aria-expanded={showArchived}
+                    >
+                      {showArchived ? "▾" : "▸"} Gearchiveerd ({liveArchived.length})
+                    </button>
+                    {showArchived && (
+                      <ul className="sidebar__list sidebar__list--archived">
+                        {liveArchived.map((d) => {
+                          const ageMs = Math.max(0, now - new Date(d.lastTs).getTime());
+                          return (
+                            <li key={d.id} className="sidebar__row">
+                              <label className="sidebar__check">
+                                <span
+                                  className="sidebar__livedot sidebar__livedot--stale"
+                                  title={`last fix ${formatAge(ageMs)}`}
+                                  aria-hidden
+                                />
+                                <span className="sidebar__rowtext">
+                                  {d.name}{" "}
+                                  <span className="sidebar__rowmeta">
+                                    · {d.role} · {formatAge(ageMs)}
+                                  </span>
+                                </span>
+                              </label>
+                              {onFlyToDevice && (
+                                <button
+                                  type="button"
+                                  className="sidebar__zoom"
+                                  onClick={() => onFlyToDevice(d.id)}
+                                  title="Vlieg naar laatst bekende positie"
+                                >
+                                  ↗
+                                </button>
+                              )}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </>
+                )}
               </section>
             )}
 

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RouteDetail, Stage, Waypoint, WaypointKind } from "../api/types";
 import { TopBar, TopBarButton } from "../chrome/TopBar";
 import { DEFAULT_CENTER, DEFAULT_ZOOM, mapStyle } from "../map/style";
-import { Sidebar } from "./Sidebar";
+import { isArchived, Sidebar } from "./Sidebar";
 import { useLivePositions, type LiveDevice } from "./useLivePositions";
 import {
   ROLE_PRESETS,
@@ -155,6 +155,17 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
   const [mapReady, setMapReady] = useState(false);
 
   const liveDevices = useLivePositions(publicPath);
+
+  // Ticking "now" for staleness math. Drives both the relative-age
+  // labels in the sidebar ("5s ago" / "2m ago") AND the live-map filter
+  // that prunes archived devices (≥ 15 min silent). Only runs when at
+  // least one live device exists; idle viewers cost zero wakeups.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (liveDevices.length === 0) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [liveDevices.length]);
 
   // Fetch the route detail.
   useEffect(() => {
@@ -440,20 +451,29 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
   }, [detail]);
 
   // Push live devices into the dedicated map sources on every update.
+  // Archived (≥ ARCHIVE_AGE_MS silent) devices are filtered out so the
+  // map only shows the active fleet — they remain accessible from the
+  // sidebar's collapsed "Gearchiveerd" group. The effect re-runs on the
+  // `now` tick below so devices disappear from the map the instant they
+  // cross the threshold, even without an incoming position update.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+    const active = liveDevices.filter(
+      (d) => !isArchived(Math.max(0, now - new Date(d.last.ts).getTime())),
+    );
     const apply = () => {
       (map.getSource("live-markers") as maplibregl.GeoJSONSource | undefined)?.setData(
-        liveMarkersFC(liveDevices),
+        liveMarkersFC(active),
       );
       (map.getSource("live-trails") as maplibregl.GeoJSONSource | undefined)?.setData(
-        liveTrailsFC(liveDevices),
+        liveTrailsFC(active),
       );
     };
     if (map.isStyleLoaded()) apply();
     else map.once("load", apply);
-  }, [liveDevices]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveDevices, now]);
 
   // Apply layer/category filters whenever the visibility sets change, or
   // when the map finishes loading (so the initial defaults are wired in
@@ -565,16 +585,6 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
       })),
     [liveDevices],
   );
-
-  // Re-render the sidebar live section every second so the relative-age
-  // labels ("5s ago", "2m ago") update in place. Only runs when there's at
-  // least one live device; idle viewers cost no wakeups.
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (liveDevices.length === 0) return;
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, [liveDevices.length]);
 
   const onFlyToStage = useCallback(
     (ordinal: number) => {

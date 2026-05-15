@@ -982,6 +982,13 @@ export function Planner({ apiKey }: PlannerProps) {
                     // row).
                     const prevAlongM = i === 0 ? 0 : teamChanges[i - 1].alongM;
                     const segmentKm = Math.max(0, tc.alongM - prevAlongM) / 1000;
+                    // Cumulative offset — a delay introduced on any earlier
+                    // leg shifts every downstream wissel by the same amount,
+                    // so the ETA shown here is start + (alongM × pace) plus
+                    // the SUM of offsets up to and including this row.
+                    const cumOffsetMin = teamChanges
+                      .slice(0, i + 1)
+                      .reduce((sum, x) => sum + x.offsetMin, 0);
                     return (
                     <li
                       key={tc.key}
@@ -1011,13 +1018,13 @@ export function Planner({ apiKey }: PlannerProps) {
                           </span>
                           {" · "}
                           <strong style={{ fontWeight: 600 }}>
-                            {fmtTeamChangeTime(tc.alongM, paceMinKm, startAt, tc.offsetMin)}
+                            {fmtTeamChangeTime(tc.alongM, paceMinKm, startAt, cumOffsetMin)}
                           </strong>
                           {tc.offsetMin !== 0 && (
                             <span style={{ color: "#9ca3af" }}>
                               {" "}
                               ({tc.offsetMin > 0 ? "+" : ""}
-                              {tc.offsetMin}m)
+                              {tc.offsetMin}m deze etappe)
                             </span>
                           )}
                         </span>
@@ -1123,6 +1130,12 @@ export function Planner({ apiKey }: PlannerProps) {
                 {runnersTotalM > 0 && teamChanges.length > 0 && (() => {
                   const last = teamChanges[teamChanges.length - 1];
                   const finalKm = Math.max(0, runnersTotalM - last.alongM) / 1000;
+                  // Same propagation rule as the per-row times: every
+                  // earlier-leg delay shifts the finish.
+                  const totalOffsetMin = teamChanges.reduce(
+                    (sum, x) => sum + x.offsetMin,
+                    0,
+                  );
                   return (
                     <div
                       style={{
@@ -1138,8 +1151,15 @@ export function Planner({ apiKey }: PlannerProps) {
                       <span style={{ color: "#9ca3af" }}>(+{finalKm.toFixed(1)} km)</span>
                       {" · "}
                       <strong style={{ fontWeight: 600 }}>
-                        {fmtTeamChangeTime(runnersTotalM, paceMinKm, startAt, last.offsetMin)}
+                        {fmtTeamChangeTime(runnersTotalM, paceMinKm, startAt, totalOffsetMin)}
                       </strong>
+                      {totalOffsetMin !== 0 && (
+                        <span style={{ color: "#9ca3af" }}>
+                          {" "}
+                          ({totalOffsetMin > 0 ? "+" : ""}
+                          {totalOffsetMin}m totaal)
+                        </span>
+                      )}
                     </div>
                   );
                 })()}

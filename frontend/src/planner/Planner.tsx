@@ -975,7 +975,14 @@ export function Planner({ apiKey }: PlannerProps) {
                   {(((TEAM_CHANGE_INTERVAL_HOURS * 60) / paceMinKm)).toFixed(0)} km stappen.
                 </div>
                 <ol style={{ padding: 0, listStyle: "none", margin: 0 }}>
-                  {teamChanges.map((tc, i) => (
+                  {teamChanges.map((tc, i) => {
+                    // Length of the relay leg ENDING at this team change —
+                    // i.e. what the just-finishing team ran since the
+                    // previous wissel (or since the start for the first
+                    // row).
+                    const prevAlongM = i === 0 ? 0 : teamChanges[i - 1].alongM;
+                    const segmentKm = Math.max(0, tc.alongM - prevAlongM) / 1000;
+                    return (
                     <li
                       key={tc.key}
                       style={{
@@ -998,7 +1005,10 @@ export function Planner({ apiKey }: PlannerProps) {
                         }}
                       >
                         <span style={{ fontSize: 12, color: "#374151" }}>
-                          #{i + 1} · km {(tc.alongM / 1000).toFixed(1)}
+                          #{i + 1} · km {(tc.alongM / 1000).toFixed(1)}{" "}
+                          <span style={{ color: "#9ca3af" }}>
+                            (+{segmentKm.toFixed(1)} km)
+                          </span>
                           {" · "}
                           <strong style={{ fontWeight: 600 }}>
                             {fmtTeamChangeTime(tc.alongM, paceMinKm, startAt, tc.offsetMin)}
@@ -1107,8 +1117,32 @@ export function Planner({ apiKey }: PlannerProps) {
                         <span style={{ marginLeft: 2 }}>min</span>
                       </div>
                     </li>
-                  ))}
+                    );
+                  })}
                 </ol>
+                {runnersTotalM > 0 && teamChanges.length > 0 && (() => {
+                  const last = teamChanges[teamChanges.length - 1];
+                  const finalKm = Math.max(0, runnersTotalM - last.alongM) / 1000;
+                  return (
+                    <div
+                      style={{
+                        border: "1px dashed #e5e7eb",
+                        padding: 8,
+                        borderRadius: 6,
+                        fontSize: 12,
+                        color: "#374151",
+                        marginBottom: 6,
+                      }}
+                    >
+                      Slotetappe — finish · km {(runnersTotalM / 1000).toFixed(1)}{" "}
+                      <span style={{ color: "#9ca3af" }}>(+{finalKm.toFixed(1)} km)</span>
+                      {" · "}
+                      <strong style={{ fontWeight: 600 }}>
+                        {fmtTeamChangeTime(runnersTotalM, paceMinKm, startAt, last.offsetMin)}
+                      </strong>
+                    </div>
+                  );
+                })()}
                 {runnersTotalM > 0 && (
                   <div style={{ fontSize: 11, color: "#6b7280", marginTop: 6 }}>
                     Totale lopers-afstand: {(runnersTotalM / 1000).toFixed(1)} km ·{" "}

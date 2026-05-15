@@ -116,10 +116,6 @@ export function Timeline({
     onHoverDistance(null);
   };
 
-  if (totalM <= 0) {
-    return <div className="planner__timeline planner__timeline--empty">Geen lopersroute geladen</div>;
-  }
-
   const cursorFrac = hoverDistanceM != null ? hoverDistanceM / totalM : null;
   const cursorOffsetMin =
     hoverDistanceM != null ? cumulativeOffsetAt(hoverDistanceM, teamChanges) : 0;
@@ -129,79 +125,89 @@ export function Timeline({
       : null;
   const cursorKm = hoverDistanceM != null ? (hoverDistanceM / 1000).toFixed(1) : null;
 
+  // Render a single stable bar element regardless of state so the
+  // ResizeObserver (attached on mount) sees the same DOM node when
+  // `detail` later loads and totalM flips from 0 to positive.
+  const empty = totalM <= 0;
+
   return (
     <div
       ref={barRef}
-      className="planner__timeline"
-      onMouseMove={onMouseMove}
-      onMouseLeave={onMouseLeave}
+      className={`planner__timeline ${empty ? "planner__timeline--empty" : ""}`}
+      onMouseMove={empty ? undefined : onMouseMove}
+      onMouseLeave={empty ? undefined : onMouseLeave}
       aria-label="Tijdlijn van de lopersroute"
     >
-      {/* Axis labels. */}
-      <div className="planner__timeline-axis">
-        {ticks.map((t) => (
-          <span
-            key={t.mins}
-            className="planner__timeline-axis-label"
-            style={{ left: `${(t.mins / totalMinutes) * 100}%` }}
-          >
-            {t.label}
-          </span>
-        ))}
-      </div>
+      {empty ? (
+        <div className="planner__timeline-empty-text">Geen lopersroute geladen</div>
+      ) : (
+        <>
+          {/* Axis labels. */}
+          <div className="planner__timeline-axis">
+            {ticks.map((t) => (
+              <span
+                key={t.mins}
+                className="planner__timeline-axis-label"
+                style={{ left: `${(t.mins / totalMinutes) * 100}%` }}
+              >
+                {t.label}
+              </span>
+            ))}
+          </div>
 
-      {/* The bar + tick marks + team change pips. */}
-      <div className="planner__timeline-track">
-        <div className="planner__timeline-track-line" />
-        {ticks.map((t) => (
-          <span
-            key={`tick-${t.mins}`}
-            className="planner__timeline-tick"
-            style={{ left: `${(t.mins / totalMinutes) * 100}%` }}
-          />
-        ))}
-        {teamChanges.map((tc, i) => {
-          const frac = tc.alongM / totalM;
-          return (
-            <span
-              key={tc.key}
-              className="planner__timeline-pip"
-              style={{ left: `${frac * 100}%` }}
-              title={tc.name || `Wissel #${i + 1}`}
-            />
-          );
-        })}
+          {/* The bar + tick marks + team change pips. */}
+          <div className="planner__timeline-track">
+            <div className="planner__timeline-track-line" />
+            {ticks.map((t) => (
+              <span
+                key={`tick-${t.mins}`}
+                className="planner__timeline-tick"
+                style={{ left: `${(t.mins / totalMinutes) * 100}%` }}
+              />
+            ))}
+            {teamChanges.map((tc, i) => {
+              const frac = tc.alongM / totalM;
+              return (
+                <span
+                  key={tc.key}
+                  className="planner__timeline-pip"
+                  style={{ left: `${frac * 100}%` }}
+                  title={tc.name || `Wissel #${i + 1}`}
+                />
+              );
+            })}
 
-        {cursorFrac != null && (
-          <div
-            className="planner__timeline-cursor"
-            style={{ left: `${cursorFrac * 100}%` }}
-            aria-hidden
-          />
-        )}
-      </div>
+            {cursorFrac != null && (
+              <div
+                className="planner__timeline-cursor"
+                style={{ left: `${cursorFrac * 100}%` }}
+                aria-hidden
+              />
+            )}
+          </div>
 
-      {/* Floating tooltip near the cursor. Clamped so it doesn't run off
-          the right edge. */}
-      {hoverX != null && cursorEta && cursorKm && (
-        <div
-          className="planner__timeline-tip"
-          style={{
-            left: hoverX,
-            // Translate left at the right edge so the tip stays visible.
-            transform: `translateX(${cursorFrac! > 0.85 ? "-100%" : "0"})`,
-          }}
-        >
-          <strong>km {cursorKm}</strong>
-          <span> · {cursorEta}</span>
-          {cursorOffsetMin !== 0 && (
-            <span className="planner__timeline-tip-offset">
-              {" "}
-              ({cursorOffsetMin > 0 ? "+" : ""}
-              {cursorOffsetMin}m cumulatief)
-            </span>
+          {/* Floating tooltip near the cursor. Clamped so it doesn't run
+              off the right edge. */}
+          {hoverX != null && cursorEta && cursorKm && (
+            <div
+              className="planner__timeline-tip"
+              style={{
+                left: hoverX,
+                transform: `translateX(${cursorFrac! > 0.85 ? "-100%" : "0"})`,
+              }}
+            >
+              <strong>km {cursorKm}</strong>
+              <span> · {cursorEta}</span>
+              {cursorOffsetMin !== 0 && (
+                <span className="planner__timeline-tip-offset">
+                  {" "}
+                  ({cursorOffsetMin > 0 ? "+" : ""}
+                  {cursorOffsetMin}m cumulatief)
+                </span>
+              )}
+            </div>
           )}
-        </div>
+        </>
       )}
     </div>
   );

@@ -18,9 +18,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  cursor: default;
+}
+.planner__timeline-empty-text {
   color: #9ca3af;
   font-size: 12px;
-  cursor: default;
 }
 
 .planner__timeline-axis {

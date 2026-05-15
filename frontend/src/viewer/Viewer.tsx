@@ -222,19 +222,22 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
           // Two looks in one layer: trace categories (vehicle road overlays)
           // get small, tightly-packed dots that visually read as a coloured
           // line; marker categories (CPs, handovers, etc.) get bigger circles
-          // with a white stroke for legibility. MapLibre forbids nesting a
-          // zoom-based `interpolate` inside a `case`, so the zoom interpolation
-          // is the outer expression and each stop's output branches on style.
+          // with a white stroke for legibility. Marker radii were bumped so
+          // category dots are recognisable at country/region zoom levels —
+          // crew kept zooming in just to identify a single waypoint.
+          // MapLibre forbids nesting a zoom-based `interpolate` inside a
+          // `case`, so the zoom interpolation is the outer expression and
+          // each stop's output branches on style.
           "circle-radius": [
             "interpolate",
             ["linear"],
             ["zoom"],
             6,
-            ["case", ["==", ["get", "style"], "trace"], 1, 2],
+            ["case", ["==", ["get", "style"], "trace"], 1, 3],
             10,
-            ["case", ["==", ["get", "style"], "trace"], 2, 4],
+            ["case", ["==", ["get", "style"], "trace"], 2, 6],
             14,
-            ["case", ["==", ["get", "style"], "trace"], 3.5, 7],
+            ["case", ["==", ["get", "style"], "trace"], 3.5, 10],
           ],
           "circle-color": ["coalesce", ["get", "color"], DEFAULT_WP_COLOR],
           "circle-stroke-width": [
@@ -293,19 +296,27 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
         id: "waypoints-icon",
         type: "symbol",
         source: "waypoints",
-        minzoom: 8,
+        // Show icons one zoom step earlier than before — crew using the
+        // viewer at country level still want a rough sense of where the
+        // checkpoints sit before drilling in.
+        minzoom: 7,
         layout: {
           "icon-image": iconImageExpr as unknown as maplibregl.ExpressionSpecification,
+          // Bumped ~60% across the board: at country zoom an icon is
+          // about a thumbnail (~28 px); at neighbourhood zoom it reads
+          // clearly without needing to zoom further.
           "icon-size": [
             "interpolate",
             ["linear"],
             ["zoom"],
-            8,
-            0.35,
-            12,
-            0.5,
-            16,
+            7,
+            0.45,
+            10,
             0.7,
+            14,
+            0.95,
+            16,
+            1.1,
           ],
           "icon-allow-overlap": false,
           "icon-ignore-placement": false,

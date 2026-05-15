@@ -14,6 +14,12 @@ import {
   type LngLat,
 } from "../map/trackMath";
 import { PairingPanel } from "./PairingPanel";
+import {
+  fmtTeamChangeTime,
+  formatPaceMinKm,
+  parsePaceMinKm,
+  toDateTimeLocalValue,
+} from "./paceTime";
 import "./planner.css";
 
 const PAIRING_TEAM_SLUG = "conclusion";
@@ -25,9 +31,15 @@ interface PlannerProps {
 
 const STAGE_PALETTE = ["#0b3d91", "#e63946", "#2a9d8f", "#f4a261", "#6d597a", "#386641"];
 const TEAM_CHANGE_CATEGORY = "team_changes";
-const PACE_KEY = "roparun-planner-pace-kmh-v1";
-const DEFAULT_PACE_KMH = 12;
+const PACE_KEY = "roparun-planner-pace-minkm-v1";
+const PACE_LEGACY_KMH_KEY = "roparun-planner-pace-kmh-v1";
+const START_KEY = "roparun-planner-start-v1";
+const DEFAULT_PACE_MIN_PER_KM = 5.0; // ≈ 12 km/h, a typical Roparun relay pace.
 const TEAM_CHANGE_INTERVAL_HOURS = 4;
+/** Notes-field encoding for per-team-change time offsets. Anything not
+ *  matching this is left untouched so non-team-change waypoints keep
+ *  their free-text notes. */
+const OFFSET_NOTE_RE = /^offset_min=(-?\d+)\s*$/;
 
 function stageColor(ordinal: number): string {
   return STAGE_PALETTE[ordinal % STAGE_PALETTE.length];
@@ -38,18 +50,27 @@ function fmtKm(meters: number | null | undefined): string {
   return `${(meters / 1000).toFixed(1)} km`;
 }
 
-function fmtHoursFromStart(distanceM: number, paceKmh: number): string {
-  if (paceKmh <= 0) return "–";
-  const hours = distanceM / 1000 / paceKmh;
-  const h = Math.floor(hours);
-  const m = Math.round((hours - h) * 60);
-  return `${h}h ${m.toString().padStart(2, "0")}m`;
-}
-
-function loadPace(): number {
+function loadPaceMinKm(): number {
   const raw = localStorage.getItem(PACE_KEY);
   const n = raw ? Number(raw) : NaN;
-  return Number.isFinite(n) && n > 0 ? n : DEFAULT_PACE_KMH;
+  if (Number.isFinite(n) && n > 0) return n;
+  // One-time migration from the legacy km/h key — keep the user's old
+  // setting instead of snapping them back to the default on first load.
+  const legacy = localStorage.getItem(PACE_LEGACY_KMH_KEY);
+  const kmh = legacy ? Number(legacy) : NaN;
+  if (Number.isFinite(kmh) && kmh > 0) {
+    const migrated = 60 / kmh;
+    localStorage.setItem(PACE_KEY, String(migrated));
+    return migrated;
+  }
+  return DEFAULT_PACE_MIN_PER_KM;
+}
+
+function loadStartAt(): Date | null {
+  const raw = localStorage.getItem(START_KEY);
+  if (!raw) return null;
+  const d = new Date(raw);
+  return Number.isFinite(d.getTime()) ? d : null;
 }
 
 function routeFeatureCollection(stages: Stage[]): GeoJSON.FeatureCollection {
@@ -88,6 +109,9 @@ interface TeamChange {
    *  position changes so list rows can show km + ETA without recomputing
    *  on every render. */
   alongM: number;
+  /** Manual offset to apply to the pace-derived ETA, in minutes.
+   *  Persisted via the waypoint's `notes` field as `offset_min=N`. */
+  offsetMin: number;
 }
 
 function newKey(): string {
@@ -108,7 +132,9 @@ export function Planner({ apiKey }: PlannerProps) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [teamChanges, setTeamChanges] = useState<TeamChange[]>([]);
-  const [paceKmh, setPaceKmh] = useState<number>(() => loadPace());
+  const [paceMinKm, setPaceMinKm] = useState<number>(() => loadPaceMinKm());
+  const [paceDraft, setPaceDraft] = useState<string>(() => formatPaceMinKm(loadPaceMinKm()));
+  const [startAt, setStartAt] = useState<Date | null>(() => loadStartAt());
 
   // Runners-track snip editor. When `editMode` is on, clicks on the map
   // are captured and snapped to the runners track; first click sets
@@ -290,7 +316,9 @@ export function Planner({ apiKey }: PlannerProps) {
           const along = runnersTrack && runnersCum
             ? snapToTrack(runnersTrack, runnersCum, [lng, lat]).alongM
             : 0;
-          return { key: newKey(), lng, lat, name: w.name ?? "", alongM: along };
+          const m = (w.notes ?? "").match(OFFSET_NOTE_RE);
+          const offsetMin = m ? parseInt(m[1], 10) : 0;
+          return { key: newKey(), lng, lat, name: w.name ?? "", alongM: along, offsetMin };
         })
         .sort((a, b) => a.alongM - b.alongM);
       setTeamChanges(tcs);
@@ -298,14 +326,23 @@ export function Planner({ apiKey }: PlannerProps) {
     }
     if (!runnersTrack || !runnersCum) return;
     const totalM = runnersCum[runnersCum.length - 1];
-    const stepM = TEAM_CHANGE_INTERVAL_HOURS * paceKmh * 1000;
+    // Distance covered in TEAM_CHANGE_INTERVAL_HOURS at the current pace,
+    // converted to meters. paceMinKm = 5 ⇒ stepM = 4·60/5 · 1000 = 48 km.
+    const stepM = ((TEAM_CHANGE_INTERVAL_HOURS * 60) / paceMinKm) * 1000;
     const placed: TeamChange[] = [];
     let k = 1;
     while (true) {
       const d = k * stepM;
       if (d >= totalM) break;
       const [lng, lat] = pointAtDistance(runnersTrack, runnersCum, d);
-      placed.push({ key: newKey(), lng, lat, name: `Team change ${k}`, alongM: d });
+      placed.push({
+        key: newKey(),
+        lng,
+        lat,
+        name: `Team change ${k}`,
+        alongM: d,
+        offsetMin: 0,
+      });
       k++;
     }
     setTeamChanges(placed);
@@ -539,6 +576,7 @@ export function Planner({ apiKey }: PlannerProps) {
             name: tc.name,
             geom: { type: "Point" as const, coordinates: [tc.lng, tc.lat] as [number, number] },
             category: TEAM_CHANGE_CATEGORY,
+            notes: tc.offsetMin !== 0 ? `offset_min=${tc.offsetMin}` : null,
           })),
         ],
       });
@@ -571,6 +609,7 @@ export function Planner({ apiKey }: PlannerProps) {
           lat,
           name: `Team change ${prev.length + 1}`,
           alongM: along,
+          offsetMin: 0,
         },
       ].sort((a, b) => a.alongM - b.alongM),
     );
@@ -584,9 +623,39 @@ export function Planner({ apiKey }: PlannerProps) {
     setTeamChanges((prev) => prev.map((x) => (x.key === key ? { ...x, name } : x)));
   };
 
-  const onPaceChange = (v: number) => {
-    setPaceKmh(v);
-    localStorage.setItem(PACE_KEY, String(v));
+  const setOffset = (key: string, offsetMin: number) => {
+    const clamped = Math.max(-600, Math.min(600, Math.round(offsetMin)));
+    setTeamChanges((prev) =>
+      prev.map((x) => (x.key === key ? { ...x, offsetMin: clamped } : x)),
+    );
+  };
+
+  /** Commit pace input. Called on blur / Enter — letting the user type
+   *  through invalid intermediate states like "5:" without flipping
+   *  values on every keystroke. */
+  const commitPace = () => {
+    const parsed = parsePaceMinKm(paceDraft);
+    if (parsed != null) {
+      setPaceMinKm(parsed);
+      localStorage.setItem(PACE_KEY, String(parsed));
+      setPaceDraft(formatPaceMinKm(parsed));
+    } else {
+      // Revert to the last good value.
+      setPaceDraft(formatPaceMinKm(paceMinKm));
+    }
+  };
+
+  const onStartAtChange = (raw: string) => {
+    if (!raw) {
+      setStartAt(null);
+      localStorage.removeItem(START_KEY);
+      return;
+    }
+    const d = new Date(raw);
+    if (Number.isFinite(d.getTime())) {
+      setStartAt(d);
+      localStorage.setItem(START_KEY, d.toISOString());
+    }
   };
 
   const flyToTeamChange = (key: string) => {
@@ -825,9 +894,11 @@ export function Planner({ apiKey }: PlannerProps) {
 
               <PairingPanel teamSlug={PAIRING_TEAM_SLUG} year={PAIRING_YEAR} />
 
-              {/* Pace setting drives the time-from-start estimates for each
-                  team change. Defaults to 12 km/h (a typical Roparun relay
-                  team pace). */}
+              {/* Pace + start moment drive the prospected times shown on
+                  each team change. Pace defaults to 5:00 min/km (≈12 km/h,
+                  a typical Roparun relay team pace). Without a start
+                  moment, ETAs render relative ("3h 24m"); with one, they
+                  render as wall-clock times ("za 16:42"). */}
               <section style={{ marginBottom: 16 }}>
                 <h2
                   style={{
@@ -838,20 +909,44 @@ export function Planner({ apiKey }: PlannerProps) {
                     letterSpacing: "0.05em",
                   }}
                 >
-                  Pace
+                  Pace &amp; start
                 </h2>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={paceDraft}
+                    onChange={(e) => setPaceDraft(e.target.value)}
+                    onBlur={commitPace}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                    }}
+                    placeholder="5:00"
+                    aria-label="Tempo in minuten per km"
+                    style={{ width: 72, padding: 4, fontFamily: "ui-monospace, monospace" }}
+                  />
+                  <span style={{ color: "#6b7280" }}>
+                    min/km · ≈ {(60 / paceMinKm).toFixed(1)} km/u
+                  </span>
+                </div>
                 <label
-                  style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13 }}
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    alignItems: "center",
+                    fontSize: 13,
+                    marginTop: 6,
+                  }}
                 >
                   <input
-                    type="number"
-                    min={1}
-                    step={0.5}
-                    value={paceKmh}
-                    onChange={(e) => onPaceChange(Number(e.target.value))}
-                    style={{ width: 80, padding: 4 }}
+                    type="datetime-local"
+                    value={toDateTimeLocalValue(startAt)}
+                    onChange={(e) => onStartAtChange(e.target.value)}
+                    style={{ padding: 4 }}
                   />
-                  <span>km/h — used for team change ETAs.</span>
+                  <span style={{ color: "#6b7280" }}>
+                    starttijd {startAt ? "" : "(optioneel)"}
+                  </span>
                 </label>
               </section>
 
@@ -890,9 +985,10 @@ export function Planner({ apiKey }: PlannerProps) {
                   </button>
                 </div>
                 <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 6 }}>
-                  Drag markers on the map to reposition. Auto-placed every{" "}
-                  {TEAM_CHANGE_INTERVAL_HOURS}h at {paceKmh} km/h =
-                  ~{(TEAM_CHANGE_INTERVAL_HOURS * paceKmh).toFixed(0)} km steps.
+                  Sleep markers op de kaart om te verplaatsen. Auto-geplaatst
+                  elke {TEAM_CHANGE_INTERVAL_HOURS}h bij {formatPaceMinKm(paceMinKm)}
+                  {" min/km ≈ "}
+                  {(((TEAM_CHANGE_INTERVAL_HOURS * 60) / paceMinKm)).toFixed(0)} km stappen.
                 </div>
                 <ol style={{ padding: 0, listStyle: "none", margin: 0 }}>
                   {teamChanges.map((tc, i) => (
@@ -914,11 +1010,22 @@ export function Planner({ apiKey }: PlannerProps) {
                           display: "flex",
                           justifyContent: "space-between",
                           alignItems: "center",
+                          gap: 6,
                         }}
                       >
-                        <span style={{ fontSize: 12, color: "#6b7280" }}>
-                          #{i + 1} · km {(tc.alongM / 1000).toFixed(1)} ·{" "}
-                          {fmtHoursFromStart(tc.alongM, paceKmh)}
+                        <span style={{ fontSize: 12, color: "#374151" }}>
+                          #{i + 1} · km {(tc.alongM / 1000).toFixed(1)}
+                          {" · "}
+                          <strong style={{ fontWeight: 600 }}>
+                            {fmtTeamChangeTime(tc.alongM, paceMinKm, startAt, tc.offsetMin)}
+                          </strong>
+                          {tc.offsetMin !== 0 && (
+                            <span style={{ color: "#9ca3af" }}>
+                              {" "}
+                              ({tc.offsetMin > 0 ? "+" : ""}
+                              {tc.offsetMin}m)
+                            </span>
+                          )}
                         </span>
                         <div style={{ display: "flex", gap: 4 }}>
                           <button
@@ -956,16 +1063,73 @@ export function Planner({ apiKey }: PlannerProps) {
                       <input
                         value={tc.name}
                         onChange={(e) => renameTeamChange(tc.key, e.target.value)}
-                        placeholder="Name"
+                        placeholder="Naam"
                         style={{ width: "100%", padding: 4, fontSize: 13 }}
                       />
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 4,
+                          fontSize: 12,
+                          color: "#6b7280",
+                        }}
+                      >
+                        <span style={{ flex: 1 }}>Offset</span>
+                        <button
+                          type="button"
+                          onClick={() => setOffset(tc.key, tc.offsetMin - 5)}
+                          aria-label="5 minuten eerder"
+                          style={{
+                            width: 24,
+                            height: 24,
+                            border: "1px solid #e5e7eb",
+                            background: "#fff",
+                            borderRadius: 4,
+                            cursor: "pointer",
+                            fontFamily: "inherit",
+                          }}
+                        >
+                          −
+                        </button>
+                        <input
+                          type="number"
+                          step={5}
+                          value={tc.offsetMin}
+                          onChange={(e) => setOffset(tc.key, Number(e.target.value))}
+                          style={{
+                            width: 60,
+                            padding: 4,
+                            fontSize: 12,
+                            textAlign: "center",
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setOffset(tc.key, tc.offsetMin + 5)}
+                          aria-label="5 minuten later"
+                          style={{
+                            width: 24,
+                            height: 24,
+                            border: "1px solid #e5e7eb",
+                            background: "#fff",
+                            borderRadius: 4,
+                            cursor: "pointer",
+                            fontFamily: "inherit",
+                          }}
+                        >
+                          +
+                        </button>
+                        <span style={{ marginLeft: 2 }}>min</span>
+                      </div>
                     </li>
                   ))}
                 </ol>
                 {runnersTotalM > 0 && (
                   <div style={{ fontSize: 11, color: "#6b7280", marginTop: 6 }}>
-                    Total runners distance: {(runnersTotalM / 1000).toFixed(1)} km ·{" "}
-                    {fmtHoursFromStart(runnersTotalM, paceKmh)} at {paceKmh} km/h
+                    Totale lopers-afstand: {(runnersTotalM / 1000).toFixed(1)} km ·{" "}
+                    {fmtTeamChangeTime(runnersTotalM, paceMinKm, startAt, 0)} bij{" "}
+                    {formatPaceMinKm(paceMinKm)} min/km
                   </div>
                 )}
               </section>

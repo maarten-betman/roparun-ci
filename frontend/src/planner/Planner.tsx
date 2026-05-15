@@ -172,6 +172,14 @@ export function Planner({ apiKey }: PlannerProps) {
   const popupsRef = useRef<Map<string, maplibregl.Popup>>(new Map());
   const hoverMarkerRef = useRef<maplibregl.Marker | null>(null);
   const [hoverDistanceM, setHoverDistanceM] = useState<number | null>(null);
+  // Sidebar is a fixed panel on desktop and a slide-in drawer on mobile.
+  // Default-closed below the breakpoint so first paint shows the map.
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(
+    () =>
+      typeof window === "undefined"
+        ? true
+        : window.matchMedia("(min-width: 721px)").matches,
+  );
   const [mapReady, setMapReady] = useState(false);
   const [routes, setRoutes] = useState<RouteSummary[]>([]);
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
@@ -481,6 +489,28 @@ export function Planner({ apiKey }: PlannerProps) {
     }
   }, [teamChanges, mapReady, paceMinKm, startAt]);
 
+  // Sidebar drawer behaviour: close on Escape (mobile UX), open
+  // automatically once the viewport grows past the breakpoint so a
+  // desktop user never ends up with the sidebar hidden.
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 721px)");
+    const onChange = () => {
+      if (mq.matches) setSidebarOpen(true);
+    };
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !window.matchMedia("(min-width: 721px)").matches) {
+        setSidebarOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [sidebarOpen]);
+
   // Ghost marker that follows the Timeline scrubber. Created lazily so
   // an unused timeline doesn't pollute the map; removed when the cursor
   // leaves the bar.
@@ -781,32 +811,43 @@ export function Planner({ apiKey }: PlannerProps) {
         versionLabel={versionLabel}
         currentPage="planner"
         actions={
-          detail ? (
-            <TopBarButton variant="primary" href={api.gpxDownloadUrl(detail.id)} download>
-              Download GPX
-            </TopBarButton>
-          ) : undefined
+          <>
+            <button
+              type="button"
+              onClick={() => setSidebarOpen((v) => !v)}
+              className="topbar__btn topbar__btn--ghost planner__tools-toggle"
+              aria-expanded={sidebarOpen}
+              aria-controls="planner-sidebar"
+            >
+              ≡ Tools
+            </button>
+            {detail && (
+              <TopBarButton variant="primary" href={api.gpxDownloadUrl(detail.id)} download>
+                Download GPX
+              </TopBarButton>
+            )}
+          </>
         }
       />
-      <div
-        style={{
-          position: "absolute",
-          top: "var(--topbar-height, 48px)",
-          left: 0,
-          right: 0,
-          bottom: 0,
-          display: "grid",
-          gridTemplateColumns: "360px 1fr",
-        }}
-      >
+      <div className="planner__layout">
+        <div
+          className={`planner__sidebar-scrim ${sidebarOpen ? "is-open" : ""}`}
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+        />
         <aside
-          style={{
-            borderRight: "1px solid #e5e7eb",
-            padding: 16,
-            overflowY: "auto",
-            fontFamily: "system-ui, sans-serif",
-          }}
+          id="planner-sidebar"
+          className={`planner__sidebar ${sidebarOpen ? "is-open" : ""}`}
+          aria-hidden={!sidebarOpen}
         >
+          <button
+            type="button"
+            className="planner__sidebar-close"
+            onClick={() => setSidebarOpen(false)}
+            aria-label="Sluit tools-paneel"
+          >
+            ✕ Sluiten
+          </button>
           <label style={{ display: "block", fontSize: 12, color: "#6b7280" }}>Route</label>
           <select
             value={selectedRouteId ?? ""}
@@ -1352,14 +1393,7 @@ export function Planner({ apiKey }: PlannerProps) {
             </div>
           )}
         </aside>
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            minHeight: 0,
-            minWidth: 0,
-          }}
-        >
+        <div className="planner__main">
           <div ref={containerRef} style={{ flex: 1, position: "relative" }} />
           <Timeline
             totalM={runnersTotalM}

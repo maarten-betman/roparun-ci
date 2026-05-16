@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     )
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
     env: str = "dev"
+    # Shared secret gating /admin/* endpoints. Unset → admin disabled
+    # (endpoints respond 503). Set via ROPARUN_ADMIN_TOKEN env var.
+    admin_token: str | None = None
 
 
 @lru_cache

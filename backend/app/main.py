@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
 from .routers import (
+    admin,
     change_events,
     devices,
     events,
@@ -42,6 +43,7 @@ def create_app() -> FastAPI:
     app.include_router(ingest.router)
     app.include_router(live.router)
     app.include_router(change_events.router)
+    app.include_router(admin.router)
     return app
 
 

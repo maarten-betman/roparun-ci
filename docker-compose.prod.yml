@@ -10,6 +10,8 @@
 #   ROPARUN_CORS_ORIGINS     — JSON list, e.g. '["https://roparun.example.com"]'
 # Optional:
 #   VITE_MAPTILER_KEY        — falls back to demotiles when unset
+#   ROPARUN_ADMIN_TOKEN      — enables /admin console; leave unset to keep
+#                              the admin endpoints returning 503
 #
 # After first deploy, run the seed once:
 #   docker compose -f docker-compose.prod.yml exec api python -m app.scripts.seed
@@ -39,6 +41,10 @@ services:
       ROPARUN_DATABASE_URL: postgresql+psycopg://roparun:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/roparun
       ROPARUN_CORS_ORIGINS: ${ROPARUN_CORS_ORIGINS:-["*"]}
       ROPARUN_ENV: prod
+      # Shared secret for /admin/*. Unset → admin endpoints return 503
+      # and the /admin page shows an explanatory banner. Set this to a
+      # long random string in Coolify to enable the console.
+      ROPARUN_ADMIN_TOKEN: ${ROPARUN_ADMIN_TOKEN:-}
     depends_on:
       db:
         condition: service_healthy

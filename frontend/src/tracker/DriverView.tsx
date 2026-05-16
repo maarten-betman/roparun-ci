@@ -170,14 +170,19 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
       center: DEFAULT_CENTER,
       zoom: DEFAULT_ZOOM,
       attributionControl: { compact: true },
+      // MapLibre's default snaps bearing to 0 when within 7° of north,
+      // which made the heading-up rotation appear to do nothing for small
+      // direction changes. Disabling the snap so every derived heading
+      // actually shows up on the map.
+      bearingSnap: 0,
     });
     mapRef.current = map;
 
-    // MapLibre's NavigationControl: zoom in/out, a compass that rotates
-    // with the map (click to reset bearing), and a 3D button that
-    // toggles pitch — exactly the "make 3D view available" request.
-    // dragRotate + pitchWithRotate are on by default, so two-finger
-    // drag on touch + right-click drag on desktop also tilt the map.
+    // MapLibre's NavigationControl: zoom in/out + compass that rotates
+    // with the map (click resets bearing). `visualizePitch: true` makes
+    // the compass icon tilt too. It is NOT a 3D toggle — clicking it
+    // resets BOTH bearing and pitch. The separate `PitchToggleControl`
+    // below is what actually flips between flat and 3D.
     map.addControl(
       new maplibregl.NavigationControl({
         visualizePitch: true,
@@ -186,6 +191,7 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
       }),
       "top-right",
     );
+    map.addControl(new PitchToggleControl(), "top-right");
 
     // Break follow-mode the moment the driver pans by hand. Only react
     // to drags with an `originalEvent` — programmatic camera moves
@@ -375,25 +381,27 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
     const map = mapRef.current;
     if (!map || !selfPos || !followSelf) return;
 
+    // Bearing source priority (loose thresholds — false starts are
+    // recoverable, but a never-rotating map feels broken):
+    //   1. Derived from the previous selfPos when we've moved at least
+    //      1 m. Works in both real GPS and test mode and is the most
+    //      reliable signal — the GPS-reported `coords.heading` is null
+    //      in many browsers until well above walking pace.
+    //   2. GPS `coords.heading` if it's a real number.
+    //   3. Last good heading we cached.
     let heading: number | null = null;
-    const gpsHeading = watch.lastPos?.coords.heading ?? null;
-    const gpsSpeed = watch.lastPos?.coords.speed ?? null;
-    if (
-      !testMode &&
-      gpsHeading != null &&
-      !Number.isNaN(gpsHeading) &&
-      gpsSpeed != null &&
-      gpsSpeed > 1
-    ) {
-      heading = gpsHeading;
-    } else if (prevSelfPosRef.current) {
+    if (prevSelfPosRef.current) {
       const moved = approxDistanceM(prevSelfPosRef.current, selfPos);
-      if (moved >= 3) heading = bearingDeg(prevSelfPosRef.current, selfPos);
+      if (moved >= 1) heading = bearingDeg(prevSelfPosRef.current, selfPos);
+    }
+    if (heading == null && !testMode) {
+      const gpsHeading = watch.lastPos?.coords.heading ?? null;
+      if (gpsHeading != null && !Number.isNaN(gpsHeading)) heading = gpsHeading;
     }
     if (heading == null) heading = lastHeadingRef.current;
     else lastHeadingRef.current = heading;
 
-    const cameraOpts: maplibregl.EaseToOptions = { center: selfPos, duration: 350 };
+    const cameraOpts: maplibregl.EaseToOptions = { center: selfPos, duration: 500 };
     if (heading != null) cameraOpts.bearing = heading;
 
     if (firstFollowFixRef.current) {
@@ -739,6 +747,49 @@ function approxDistanceM(a: LngLat, b: LngLat): number {
   const lat = ((a[1] + b[1]) / 2) * (Math.PI / 180);
   const x = dLng * Math.cos(lat);
   return Math.sqrt(x * x + dLat * dLat) * R;
+}
+
+/** Tiny custom MapLibre control: a "3D" toggle button styled like the
+ *  built-in NavigationControl buttons so it slots into the same group.
+ *  NavigationControl's visualizePitch only DECORATES the compass — it
+ *  doesn't give you a way to flip into 3D. This does. */
+class PitchToggleControl implements maplibregl.IControl {
+  private _map: maplibregl.Map | undefined;
+  private _container: HTMLDivElement | undefined;
+  private readonly _targetPitch: number;
+
+  constructor(targetPitch = 60) {
+    this._targetPitch = targetPitch;
+  }
+
+  onAdd(map: maplibregl.Map): HTMLElement {
+    this._map = map;
+    this._container = document.createElement("div");
+    this._container.className = "maplibregl-ctrl maplibregl-ctrl-group";
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "maplibregl-ctrl-pitch";
+    btn.title = "Toggle 3D view";
+    btn.setAttribute("aria-label", "Toggle 3D view");
+    btn.style.fontWeight = "700";
+    btn.style.fontSize = "12px";
+    btn.textContent = "3D";
+    btn.onclick = () => {
+      const m = this._map;
+      if (!m) return;
+      const flat = m.getPitch() < 5;
+      m.easeTo({ pitch: flat ? this._targetPitch : 0, duration: 500 });
+      btn.classList.toggle("is-active", flat);
+    };
+    this._container.appendChild(btn);
+    return this._container;
+  }
+
+  onRemove(): void {
+    this._container?.parentNode?.removeChild(this._container);
+    this._map = undefined;
+  }
 }
 
 function formatAgo(ts: string): string {

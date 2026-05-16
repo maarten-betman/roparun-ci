@@ -334,6 +334,14 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* Active state for our custom 3D toggle, sits in the same control group
+ * as MapLibre's NavigationControl so it inherits .maplibregl-ctrl
+ * sizing/shadow automatically — only the active-fill needs styling. */
+.maplibregl-ctrl-pitch.is-active {
+  background-color: var(--color-roparun-blue, #0b3d91);
+  color: #fff;
+}
 .driver__flybtns {
   display: flex;
   gap: 6px;

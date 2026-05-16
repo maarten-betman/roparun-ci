@@ -322,6 +322,18 @@
 .driver__selfbtn:hover {
   color: var(--color-roparun-blue, #0b3d91);
 }
+.driver__selfbtn--active {
+  background: var(--color-roparun-blue, #0b3d91);
+  color: #fff;
+  border-color: var(--color-roparun-blue, #0b3d91);
+}
+.driver__selfbtn--active:hover {
+  color: #fff;
+}
+.driver__selfbtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 .driver__flybtns {
   display: flex;
   gap: 6px;

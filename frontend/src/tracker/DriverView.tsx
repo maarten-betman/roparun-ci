@@ -18,6 +18,7 @@ import { useWatch } from "./useWatch";
 const DEFAULT_TARGET_M = 1500;
 const TARGET_KEY = "roparun-tracker-target-m-v1";
 const TEST_MODE_KEY = "roparun-tracker-testmode-v1";
+const FOLLOW_KEY = "roparun-tracker-follow-v1";
 
 const COLOR_RUNNERS = "#eab308";
 const COLOR_VEHICLE_B = "#2563eb";
@@ -33,6 +34,13 @@ function loadTarget(): number {
 
 function loadTestMode(): boolean {
   return localStorage.getItem(TEST_MODE_KEY) === "1";
+}
+
+function loadFollow(): boolean {
+  // Default ON. Persisted so a manual pan in one session doesn't lose the
+  // user's preference for the next.
+  const raw = localStorage.getItem(FOLLOW_KEY);
+  return raw === null ? true : raw === "1";
 }
 
 export interface DriverViewProps {
@@ -61,6 +69,20 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
   const [testMode, setTestMode] = useState<boolean>(() => loadTestMode());
   const [testProgress, setTestProgress] = useState<number>(0);
   const [mapReady, setMapReady] = useState(false);
+  const [followSelf, setFollowSelf] = useState<boolean>(() => loadFollow());
+  // Ref mirrors `followSelf` so the map's `dragstart` listener (bound
+  // once inside the map-init effect) reads the current value rather than
+  // a stale closure.
+  const followRef = useRef(followSelf);
+  useEffect(() => {
+    followRef.current = followSelf;
+    localStorage.setItem(FOLLOW_KEY, followSelf ? "1" : "0");
+  }, [followSelf]);
+  // First-fix flag: when follow is on we use easeTo (smooth pan) for
+  // subsequent updates, but the very first centre uses flyTo + a sane zoom
+  // so the driver instantly sees where they are even if the map is still
+  // showing the country-wide fit-to-bounds default.
+  const firstFollowFixRef = useRef(true);
   const { team_slug: teamSlug, year } = creds;
 
   const { start, tracking, stop } = watch;
@@ -145,6 +167,31 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
       attributionControl: { compact: true },
     });
     mapRef.current = map;
+
+    // MapLibre's NavigationControl: zoom in/out, a compass that rotates
+    // with the map (click to reset bearing), and a 3D button that
+    // toggles pitch — exactly the "make 3D view available" request.
+    // dragRotate + pitchWithRotate are on by default, so two-finger
+    // drag on touch + right-click drag on desktop also tilt the map.
+    map.addControl(
+      new maplibregl.NavigationControl({
+        visualizePitch: true,
+        showCompass: true,
+        showZoom: true,
+      }),
+      "top-right",
+    );
+
+    // Break follow-mode the moment the driver pans by hand. Only react
+    // to drags with an `originalEvent` — programmatic camera moves
+    // (easeTo / flyTo) fire dragstart-like events without one.
+    map.on("dragstart", (e) => {
+      const inner = (e as { originalEvent?: Event }).originalEvent;
+      if (inner && followRef.current) {
+        followRef.current = false;
+        setFollowSelf(false);
+      }
+    });
 
     const ro = new ResizeObserver(() => map.resize());
     ro.observe(containerRef.current);
@@ -307,6 +354,27 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
     else map.once("load", apply);
   }, [selfPos]);
 
+  // ---------- Follow-the-user camera ----------
+  // When `followSelf` is on, ease the camera to every new selfPos. The
+  // first fix uses flyTo with an explicit driving-zoom so the driver
+  // doesn't have to manually zoom in from the country-wide initial view.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !selfPos || !followSelf) return;
+    if (firstFollowFixRef.current) {
+      map.flyTo({ center: selfPos, zoom: 15, duration: 600 });
+      firstFollowFixRef.current = false;
+    } else {
+      map.easeTo({ center: selfPos, duration: 350 });
+    }
+  }, [selfPos, followSelf]);
+
+  // Re-arm the first-fix flag whenever follow is turned back on, so a
+  // manual pan → re-enable cycle re-anchors the view.
+  useEffect(() => {
+    if (followSelf) firstFollowFixRef.current = true;
+  }, [followSelf]);
+
   // ---------- Change events ----------
   // Only the most recent change is drawn on the map. Older ones stay in
   // state (so the WS handler's de-duplication still works), but rendering
@@ -409,10 +477,16 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
     localStorage.setItem(TEST_MODE_KEY, v ? "1" : "0");
   };
 
-  const flyToSelf = () => {
-    const map = mapRef.current;
-    if (!map || !selfPos) return;
-    map.flyTo({ center: selfPos, zoom: 14, duration: 400 });
+  const onToggleFollow = () => {
+    // Toggle follow. If we're enabling it, jump straight to the current
+    // selfPos so the action has an immediate visual effect (the
+    // follow-effect itself would also handle this on next render, but
+    // doing it inline avoids a one-frame "nothing happened" feel).
+    if (!followSelf && selfPos) {
+      const map = mapRef.current;
+      map?.flyTo({ center: selfPos, zoom: 15, duration: 400 });
+    }
+    setFollowSelf((v) => !v);
   };
 
   const flyToNext = () => {
@@ -543,11 +617,14 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
           <div className="driver__flybtns">
             <button
               type="button"
-              className="driver__selfbtn"
-              onClick={flyToSelf}
-              title="Center on me"
+              className={`driver__selfbtn${
+                followSelf ? " driver__selfbtn--active" : ""
+              }`}
+              onClick={onToggleFollow}
+              title={followSelf ? "Stop following me" : "Follow me"}
+              disabled={!selfPos}
             >
-              ↖ me
+              {followSelf ? "● follow" : "↖ follow"}
             </button>
             {nextExpected && (
               <button

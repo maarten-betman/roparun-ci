@@ -83,6 +83,11 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
   // so the driver instantly sees where they are even if the map is still
   // showing the country-wide fit-to-bounds default.
   const firstFollowFixRef = useRef(true);
+  // Previous selfPos — used to derive a heading in test mode (the
+  // browser only fills `coords.heading` when actually moving) and as a
+  // fallback when the GPS heading is null/jittery at low speed.
+  const prevSelfPosRef = useRef<LngLat | null>(null);
+  const lastHeadingRef = useRef<number | null>(null);
   const { team_slug: teamSlug, year } = creds;
 
   const { start, tracking, stop } = watch;
@@ -355,24 +360,62 @@ export function DriverView({ creds, onUnpair }: DriverViewProps) {
   }, [selfPos]);
 
   // ---------- Follow-the-user camera ----------
-  // When `followSelf` is on, ease the camera to every new selfPos. The
-  // first fix uses flyTo with an explicit driving-zoom so the driver
-  // doesn't have to manually zoom in from the country-wide initial view.
+  // When `followSelf` is on, ease the camera to every new selfPos AND
+  // rotate it so the driving direction always points up. Heading source
+  // priority:
+  //   1. Real GPS `coords.heading` if the device is actually moving
+  //      (> 1 m/s — the spec only guarantees a value when in motion;
+  //      below that, browsers return null or wildly jittery readings).
+  //   2. Bearing derived from the previous selfPos when we've moved at
+  //      least 3 m (covers test mode, where coords.heading is absent,
+  //      and slow-speed real GPS).
+  //   3. Last good heading we cached, so we don't snap to north at every
+  //      red light.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !selfPos || !followSelf) return;
+
+    let heading: number | null = null;
+    const gpsHeading = watch.lastPos?.coords.heading ?? null;
+    const gpsSpeed = watch.lastPos?.coords.speed ?? null;
+    if (
+      !testMode &&
+      gpsHeading != null &&
+      !Number.isNaN(gpsHeading) &&
+      gpsSpeed != null &&
+      gpsSpeed > 1
+    ) {
+      heading = gpsHeading;
+    } else if (prevSelfPosRef.current) {
+      const moved = approxDistanceM(prevSelfPosRef.current, selfPos);
+      if (moved >= 3) heading = bearingDeg(prevSelfPosRef.current, selfPos);
+    }
+    if (heading == null) heading = lastHeadingRef.current;
+    else lastHeadingRef.current = heading;
+
+    const cameraOpts: maplibregl.EaseToOptions = { center: selfPos, duration: 350 };
+    if (heading != null) cameraOpts.bearing = heading;
+
     if (firstFollowFixRef.current) {
-      map.flyTo({ center: selfPos, zoom: 15, duration: 600 });
+      map.flyTo({ ...cameraOpts, zoom: 15, duration: 600 });
       firstFollowFixRef.current = false;
     } else {
-      map.easeTo({ center: selfPos, duration: 350 });
+      map.easeTo(cameraOpts);
     }
-  }, [selfPos, followSelf]);
+
+    prevSelfPosRef.current = selfPos;
+  }, [selfPos, followSelf, watch.lastPos, testMode]);
 
   // Re-arm the first-fix flag whenever follow is turned back on, so a
-  // manual pan → re-enable cycle re-anchors the view.
+  // manual pan → re-enable cycle re-anchors the view. Also drop the
+  // cached heading + previous selfPos so an old bearing from another
+  // leg of the route doesn't snap the camera on the very first frame.
   useEffect(() => {
-    if (followSelf) firstFollowFixRef.current = true;
+    if (followSelf) {
+      firstFollowFixRef.current = true;
+      prevSelfPosRef.current = null;
+      lastHeadingRef.current = null;
+    }
   }, [followSelf]);
 
   // ---------- Change events ----------
@@ -671,6 +714,31 @@ function pointFC(p: LngLat): GeoJSON.FeatureCollection {
     type: "FeatureCollection",
     features: [{ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: p } }],
   };
+}
+
+/** Initial bearing in degrees (clockwise from north) for the great-circle
+ *  path from `from` to `to`. Same convention MapLibre's `bearing` uses. */
+function bearingDeg(from: LngLat, to: LngLat): number {
+  const lat1 = (from[1] * Math.PI) / 180;
+  const lat2 = (to[1] * Math.PI) / 180;
+  const dLng = ((to[0] - from[0]) * Math.PI) / 180;
+  const y = Math.sin(dLng) * Math.cos(lat2);
+  const x =
+    Math.cos(lat1) * Math.sin(lat2) -
+    Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
+/** Rough metric distance between two lng/lat points (equirectangular —
+ *  fine at 10s of meters; we only use this to gate "did we move enough
+ *  to trust a derived heading"). */
+function approxDistanceM(a: LngLat, b: LngLat): number {
+  const R = 6378137;
+  const dLat = ((b[1] - a[1]) * Math.PI) / 180;
+  const dLng = ((b[0] - a[0]) * Math.PI) / 180;
+  const lat = ((a[1] + b[1]) / 2) * (Math.PI / 180);
+  const x = dLng * Math.cos(lat);
+  return Math.sqrt(x * x + dLat * dLat) * R;
 }
 
 function formatAgo(ts: string): string {

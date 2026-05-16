@@ -6,6 +6,7 @@ import { TopBar, TopBarButton } from "../chrome/TopBar";
 import { DEFAULT_CENTER, DEFAULT_ZOOM, mapStyle } from "../map/style";
 import { isArchived, Sidebar } from "./Sidebar";
 import { useLivePositions, type LiveDevice } from "./useLivePositions";
+import { useUserLocation, type UserFix } from "./useUserLocation";
 import {
   ROLE_PRESETS,
   WAYPOINT_CATEGORIES,
@@ -53,6 +54,52 @@ function liveMarkersFC(devices: LiveDevice[]): GeoJSON.FeatureCollection {
         coordinates: [d.last.lng, d.last.lat],
       },
     })),
+  };
+}
+
+/** Build a 64-vertex polygon approximating a metric circle around the
+ *  user's GPS fix. We render it as a fill layer so it scales with zoom
+ *  the same way the rest of the route does — MapLibre's `circle-radius`
+ *  is in pixels and wouldn't represent the real-world accuracy. */
+function accuracyPolygonFC(fix: UserFix | null): GeoJSON.FeatureCollection {
+  if (!fix) return { type: "FeatureCollection", features: [] };
+  const steps = 64;
+  const earthR = 6378137;
+  const dRad = fix.accuracy_m / earthR;
+  const cosLat = Math.cos((fix.lat * Math.PI) / 180);
+  const coords: [number, number][] = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = (i / steps) * 2 * Math.PI;
+    const dx = (dRad * Math.cos(t)) / cosLat;
+    const dy = dRad * Math.sin(t);
+    coords.push([
+      fix.lng + (dx * 180) / Math.PI,
+      fix.lat + (dy * 180) / Math.PI,
+    ]);
+  }
+  return {
+    type: "FeatureCollection",
+    features: [
+      {
+        type: "Feature",
+        properties: {},
+        geometry: { type: "Polygon", coordinates: [coords] },
+      },
+    ],
+  };
+}
+
+function userDotFC(fix: UserFix | null): GeoJSON.FeatureCollection {
+  if (!fix) return { type: "FeatureCollection", features: [] };
+  return {
+    type: "FeatureCollection",
+    features: [
+      {
+        type: "Feature",
+        properties: {},
+        geometry: { type: "Point", coordinates: [fix.lng, fix.lat] },
+      },
+    ],
   };
 }
 
@@ -155,6 +202,7 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
   const [mapReady, setMapReady] = useState(false);
 
   const liveDevices = useLivePositions(publicPath);
+  const userLocation = useUserLocation();
 
   // Ticking "now" for staleness math. Drives both the relative-age
   // labels in the sidebar ("5s ago" / "2m ago") AND the live-map filter
@@ -396,6 +444,60 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
         },
       });
 
+      // User's own location (client-side only — not uploaded). Three
+      // layers stacked: a translucent accuracy polygon scaled in meters,
+      // a soft pulse halo, and a crisp blue dot with a white outline so
+      // it reads against any basemap. Added last → drawn on top of
+      // everything else, including the live crew markers.
+      map.addSource("user-location-accuracy", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      map.addLayer({
+        id: "user-location-accuracy-fill",
+        type: "fill",
+        source: "user-location-accuracy",
+        paint: {
+          "fill-color": "#1d4ed8",
+          "fill-opacity": 0.12,
+        },
+      });
+      map.addLayer({
+        id: "user-location-accuracy-line",
+        type: "line",
+        source: "user-location-accuracy",
+        paint: {
+          "line-color": "#1d4ed8",
+          "line-width": 1,
+          "line-opacity": 0.4,
+        },
+      });
+      map.addSource("user-location-dot", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      map.addLayer({
+        id: "user-location-pulse",
+        type: "circle",
+        source: "user-location-dot",
+        paint: {
+          "circle-radius": 14,
+          "circle-color": "#1d4ed8",
+          "circle-opacity": 0.25,
+        },
+      });
+      map.addLayer({
+        id: "user-location-core",
+        type: "circle",
+        source: "user-location-dot",
+        paint: {
+          "circle-radius": 6,
+          "circle-color": "#1d4ed8",
+          "circle-stroke-width": 2,
+          "circle-stroke-color": "#ffffff",
+        },
+      });
+
       map.on("mouseenter", "waypoints-circle", (e) => {
         const f = e.features?.[0];
         if (!f) return;
@@ -474,6 +576,34 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
     else map.once("load", apply);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveDevices, now]);
+
+  // Push the user's own GPS fix into its sources, and fly to the spot
+  // the first time we get one (so the toggle has an obvious effect even
+  // when the user is far outside the current viewport).
+  const flewToUserRef = useRef(false);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const fix = userLocation.fix;
+    const apply = () => {
+      (
+        map.getSource("user-location-accuracy") as
+          | maplibregl.GeoJSONSource
+          | undefined
+      )?.setData(accuracyPolygonFC(fix));
+      (
+        map.getSource("user-location-dot") as maplibregl.GeoJSONSource | undefined
+      )?.setData(userDotFC(fix));
+    };
+    if (map.isStyleLoaded()) apply();
+    else map.once("load", apply);
+
+    if (fix && !flewToUserRef.current) {
+      map.flyTo({ center: [fix.lng, fix.lat], zoom: Math.max(map.getZoom(), 13) });
+      flewToUserRef.current = true;
+    }
+    if (!fix) flewToUserRef.current = false;
+  }, [userLocation.fix]);
 
   // Apply layer/category filters whenever the visibility sets change, or
   // when the map finishes loading (so the initial defaults are wired in
@@ -613,6 +743,14 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
         currentPage="viewer"
         actions={
           <>
+            <TopBarButton
+              onClick={() => userLocation.toggle()}
+              variant={userLocation.status === "tracking" ? "primary" : "ghost"}
+            >
+              {userLocation.status === "tracking" || userLocation.status === "prompting"
+                ? "Verberg locatie"
+                : "Mijn locatie"}
+            </TopBarButton>
             <TopBarButton onClick={() => shareCurrentUrl()}>Share</TopBarButton>
             {detail && (
               <TopBarButton
@@ -626,6 +764,27 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
           </>
         }
       />
+      {userLocation.errorMessage && (
+        <div
+          role="status"
+          style={{
+            position: "absolute",
+            top: "calc(var(--topbar-height, 48px) + 12px)",
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: "#fee2e2",
+            color: "#991b1b",
+            padding: "8px 14px",
+            borderRadius: 8,
+            fontSize: 13,
+            boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
+            zIndex: 3,
+            maxWidth: "calc(100% - 32px)",
+          }}
+        >
+          {userLocation.errorMessage}
+        </div>
+      )}
       <div
         ref={containerRef}
         style={{

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Roparun GIS favicon. Navy round-square (matches the app's theme-color
+       #0b3d91 / Roparun navy), a yellow runner-track stroke from south-west
+       to north-east, and two white endpoint dots evoking the Paris -> Rotterdam
+       relay. Readable at 16 px. -->
+  <rect width="32" height="32" rx="7" fill="#0b3d91"/>
+  <path d="M7 24 Q12 14 16 16 T25 8" stroke="#eab308" stroke-width="3.5"
+        fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="7" cy="24" r="2.6" fill="#ffffff"/>
+  <circle cx="25" cy="8" r="2.6" fill="#ef4e23"/>
+</svg>

@@ -32,6 +32,20 @@ interface PlannerProps {
 
 const STAGE_PALETTE = ["#0b3d91", "#e63946", "#2a9d8f", "#f4a261", "#6d597a", "#386641"];
 const TEAM_CHANGE_CATEGORY = "team_changes";
+/** Heuristic recogniser for a "team change" waypoint when reading the
+ *  route back from the server. The canonical marker is
+ *  `category === TEAM_CHANGE_CATEGORY`, but older saves used different
+ *  category strings (and at one point none at all), so we also accept
+ *  any `kind === "handover"` whose name follows the planner's auto-
+ *  placed naming convention. Without this widening, a route saved by
+ *  an older build looks empty to the new sync effect and auto-place
+ *  silently overwrites the user's dragged positions on refresh. */
+function isTeamChangeWaypoint(w: { kind?: string; category?: string | null; name?: string | null }): boolean {
+  if (w.category === TEAM_CHANGE_CATEGORY) return true;
+  if (w.kind !== "handover") return false;
+  const name = w.name ?? "";
+  return /^team change\b/i.test(name);
+}
 const PACE_KEY = "roparun-planner-pace-minkm-v1";
 const PACE_LEGACY_KMH_KEY = "roparun-planner-pace-kmh-v1";
 const START_KEY = "roparun-planner-start-v1";
@@ -186,6 +200,11 @@ export function Planner({ apiKey }: PlannerProps) {
   const [detail, setDetail] = useState<RouteDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Last-saved hint shown next to the save button: confirms the
+  // round-trip succeeded AND prints how many team changes the server
+  // returned, so a category-mismatch silently dropping rows would be
+  // visible as "5 → 0 team changes" instead of looking like a no-op.
+  const [savedAt, setSavedAt] = useState<{ at: number; count: number } | null>(null);
   const [teamChanges, setTeamChanges] = useState<TeamChange[]>([]);
   const [paceMinKm, setPaceMinKm] = useState<number>(() => loadPaceMinKm());
   const [paceDraft, setPaceDraft] = useState<string>(() => formatPaceMinKm(loadPaceMinKm()));
@@ -348,9 +367,10 @@ export function Planner({ apiKey }: PlannerProps) {
       setTeamChanges([]);
       return;
     }
-    const fromServer = detail.waypoints.filter(
-      (w) => w.category === TEAM_CHANGE_CATEGORY,
-    );
+    // Use the widened recogniser, not a strict category match — older
+    // saves and GPX imports can land with a different (or missing)
+    // category, and a strict filter would auto-place over them.
+    const fromServer = detail.waypoints.filter(isTeamChangeWaypoint);
     if (fromServer.length > 0) {
       const tcs: TeamChange[] = fromServer
         .map((w) => {
@@ -679,10 +699,11 @@ export function Planner({ apiKey }: PlannerProps) {
     try {
       // Keep everything that isn't a team_change; append current team
       // changes (which may be edits of previously-saved ones, new
-      // auto-placed ones, or manually added).
-      const nonTeamChanges = detail.waypoints.filter(
-        (w) => w.category !== TEAM_CHANGE_CATEGORY,
-      );
+      // auto-placed ones, or manually added). Uses the widened
+      // recogniser so legacy team-change waypoints (different category
+      // or none) are also filtered out — otherwise they'd survive the
+      // round-trip as ghost handovers next to the new ones.
+      const nonTeamChanges = detail.waypoints.filter((w) => !isTeamChangeWaypoint(w));
       const d = await api.replaceRoute(detail.id, {
         stages: detail.stages.map((s) => ({
           ordinal: s.ordinal,
@@ -712,6 +733,11 @@ export function Planner({ apiKey }: PlannerProps) {
         ],
       });
       setDetail(d);
+      // Confirm the round-trip by counting team-change waypoints the
+      // server returned. If this is suddenly 0 right after the save,
+      // the bug is on the read side (filter mismatch), not the write.
+      const echoed = d.waypoints.filter(isTeamChangeWaypoint).length;
+      setSavedAt({ at: Date.now(), count: echoed });
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -917,12 +943,27 @@ export function Planner({ apiKey }: PlannerProps) {
                   padding: "10px 12px",
                   borderRadius: 6,
                   fontSize: 15,
-                  marginBottom: 16,
+                  marginBottom: 4,
                   cursor: busy ? "wait" : "pointer",
                 }}
               >
                 Save stage + team-change edits
               </button>
+              {savedAt && (
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: savedAt.count === teamChanges.length ? "#047857" : "#b45309",
+                    marginBottom: 12,
+                    textAlign: "center",
+                  }}
+                >
+                  Opgeslagen ✓ — server returned {savedAt.count} team change
+                  {savedAt.count === 1 ? "" : "s"}
+                  {savedAt.count !== teamChanges.length &&
+                    ` (sent ${teamChanges.length} — mismatch!)`}
+                </div>
+              )}
 
               {/* Runners-track snip editor — click two points on the track
                   in the map, preview the red section, remove it. The

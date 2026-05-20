@@ -50,7 +50,30 @@ const PACE_KEY = "roparun-planner-pace-minkm-v1";
 const PACE_LEGACY_KMH_KEY = "roparun-planner-pace-kmh-v1";
 const START_KEY = "roparun-planner-start-v1";
 const DEFAULT_PACE_MIN_PER_KM = 5.0; // ≈ 12 km/h, a typical Roparun relay pace.
-const TEAM_CHANGE_INTERVAL_HOURS = 4;
+
+/** Official wissel (runner-change) locations for the 2026
+ *  Paris → Rotterdam route, from the Roparun organisation's V3
+ *  handbook. The km values are measured along the runners track
+ *  from the Clastres start (km 0); the planner snaps each entry
+ *  to the closest point on the loaded GPX, so small deltas vs.
+ *  the official km figures (route updates between V3 and V4,
+ *  GPX simplification) round to the right neighbourhood.
+ *
+ *  Excludes the finish at Wilhelminaplein (km 547.6) — that's a
+ *  time registration, not a wissel. */
+const OFFICIAL_WISSELS_2026: { km: number; name: string }[] = [
+  { km: 50.3, name: "Busigny" },
+  { km: 108.9, name: "Quiévrechain" },
+  { km: 167.2, name: "Geraardsbergen" },
+  { km: 220.7, name: "Dendermonde" },
+  { km: 265.6, name: "Antwerpen" },
+  { km: 324.2, name: "Chaam" },
+  { km: 373.0, name: "Breda" },
+  { km: 423.9, name: "Roosendaal" },
+  { km: 460.0, name: "Bergen op Zoom" },
+  { km: 486.4, name: "Dintelmond" },
+  { km: 518.7, name: "Oud-Beijerland" },
+];
 /** Notes-field encoding for per-team-change time offsets. Anything not
  *  matching this is left untouched so non-team-change waypoints keep
  *  their free-text notes. */
@@ -63,6 +86,23 @@ function stageColor(ordinal: number): string {
 function fmtKm(meters: number | null | undefined): string {
   if (meters == null) return "–";
   return `${(meters / 1000).toFixed(1)} km`;
+}
+
+/** Snap the official wissel list to a loaded runners track. Each entry's
+ *  km is clamped to the track length so a slightly-shorter V3 GPX still
+ *  produces sensible markers (later wissels would pile up at the end
+ *  instead of disappearing). Caller is responsible for assigning fresh
+ *  keys + zero offsets. */
+function officialWisselsOnTrack(
+  track: LngLat[],
+  cum: number[],
+): { lng: number; lat: number; name: string; alongM: number }[] {
+  const totalM = cum[cum.length - 1] ?? 0;
+  return OFFICIAL_WISSELS_2026.map(({ km, name }) => {
+    const targetM = Math.min(km * 1000, totalM);
+    const [lng, lat] = pointAtDistance(track, cum, targetM);
+    return { lng, lat, name, alongM: targetM };
+  });
 }
 
 function escapeHtml(s: string): string {
@@ -387,26 +427,13 @@ export function Planner({ apiKey }: PlannerProps) {
       return;
     }
     if (!runnersTrack || !runnersCum) return;
-    const totalM = runnersCum[runnersCum.length - 1];
-    // Distance covered in TEAM_CHANGE_INTERVAL_HOURS at the current pace,
-    // converted to meters. paceMinKm = 5 ⇒ stepM = 4·60/5 · 1000 = 48 km.
-    const stepM = ((TEAM_CHANGE_INTERVAL_HOURS * 60) / paceMinKm) * 1000;
-    const placed: TeamChange[] = [];
-    let k = 1;
-    while (true) {
-      const d = k * stepM;
-      if (d >= totalM) break;
-      const [lng, lat] = pointAtDistance(runnersTrack, runnersCum, d);
-      placed.push({
-        key: newKey(),
-        lng,
-        lat,
-        name: `Team change ${k}`,
-        alongM: d,
-        offsetMin: 0,
-      });
-      k++;
-    }
+    // Default to the official 2026 wissel locations (Busigny, Quiévrechain,
+    // Geraardsbergen, …) rather than time × pace × interval guesses. The
+    // helper clamps each entry to the actual track length and snaps to
+    // the closest point on the loaded GPX.
+    const placed: TeamChange[] = officialWisselsOnTrack(runnersTrack, runnersCum).map(
+      (w) => ({ key: newKey(), ...w, offsetMin: 0 }),
+    );
     setTeamChanges(placed);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail?.id, runnersTrack, runnersCum]);
@@ -749,6 +776,23 @@ export function Planner({ apiKey }: PlannerProps) {
     setDetail((d) =>
       d ? { ...d, stages: d.stages.map((s) => (s.ordinal === ordinal ? { ...s, ...patch } : s)) } : d,
     );
+  };
+
+  const loadOfficialWissels = () => {
+    if (!runnersTrack || !runnersCum) return;
+    if (
+      teamChanges.length > 0 &&
+      !window.confirm(
+        "Replace the current team changes with the 11 official 2026 wissels? " +
+          "Manual edits will be lost — click Save afterwards to persist.",
+      )
+    ) {
+      return;
+    }
+    const placed: TeamChange[] = officialWisselsOnTrack(runnersTrack, runnersCum).map(
+      (w) => ({ key: newKey(), ...w, offsetMin: 0 }),
+    );
+    setTeamChanges(placed);
   };
 
   const addTeamChangeAtEnd = () => {
@@ -1154,26 +1198,42 @@ export function Planner({ apiKey }: PlannerProps) {
                   >
                     Team changes ({teamChanges.length})
                   </h2>
-                  <button
-                    type="button"
-                    onClick={addTeamChangeAtEnd}
-                    disabled={!runnersTrack}
-                    style={{
-                      background: "none",
-                      border: 0,
-                      color: "#0b3d91",
-                      fontSize: 11,
-                      cursor: runnersTrack ? "pointer" : "default",
-                    }}
-                  >
-                    + Add
-                  </button>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      type="button"
+                      onClick={loadOfficialWissels}
+                      disabled={!runnersTrack}
+                      title="Replace the current team changes with the official 2026 wissels (Busigny, Quiévrechain, …)"
+                      style={{
+                        background: "none",
+                        border: 0,
+                        color: "#0b3d91",
+                        fontSize: 11,
+                        cursor: runnersTrack ? "pointer" : "default",
+                      }}
+                    >
+                      ↻ Official 2026
+                    </button>
+                    <button
+                      type="button"
+                      onClick={addTeamChangeAtEnd}
+                      disabled={!runnersTrack}
+                      style={{
+                        background: "none",
+                        border: 0,
+                        color: "#0b3d91",
+                        fontSize: 11,
+                        cursor: runnersTrack ? "pointer" : "default",
+                      }}
+                    >
+                      + Add
+                    </button>
+                  </div>
                 </div>
                 <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 6 }}>
-                  Sleep markers op de kaart om te verplaatsen. Auto-geplaatst
-                  elke {TEAM_CHANGE_INTERVAL_HOURS}h bij {formatPaceMinKm(paceMinKm)}
-                  {" min/km ≈ "}
-                  {(((TEAM_CHANGE_INTERVAL_HOURS * 60) / paceMinKm)).toFixed(0)} km stappen.
+                  Sleep markers op de kaart om te verplaatsen. Defaults to
+                  the {OFFICIAL_WISSELS_2026.length} official 2026 wissels;
+                  use ↻ Official 2026 om handmatige edits te resetten.
                 </div>
                 <ol style={{ padding: 0, listStyle: "none", margin: 0 }}>
                   {teamChanges.map((tc, i) => {

@@ -1,0 +1,126 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<gpx xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd" version="1.1" creator="Roparun" xmlns="http://www.topografix.com/GPX/1/1">
+  <wpt lat="50.091059771136472" lon="3.4485615545871768">
+    <name>Doorkomst Bertry</name>
+  </wpt>
+  <wpt lat="50.343851983398849" lon="3.6440096938338669">
+    <name>Doorkomst Sebourg</name>
+  </wpt>
+  <wpt lat="50.943803309455028" lon="4.055868606552691">
+    <name>Doorkomst Aalst</name>
+  </wpt>
+  <wpt lat="50.952348937664077" lon="4.09417217956271">
+    <name>ROPARUN Steunpunt Moorsel</name>
+  </wpt>
+  <wpt lat="51.027080389432669" lon="4.0979159286974483">
+    <name>Doorkomst Dendermonde</name>
+  </wpt>
+  <wpt lat="51.068178718194581" lon="4.0384552415963348">
+    <name>Doorkomst Zele</name>
+  </wpt>
+  <wpt lat="51.104298587747557" lon="4.1423416566137767">
+    <name>Doorkomst Hamme</name>
+  </wpt>
+  <wpt lat="51.471771429542891" lon="4.6665091075514482">
+    <name>Doorkomst Zundert</name>
+  </wpt>
+  <wpt lat="51.510684747758582" lon="4.6948654415396094">
+    <name>Doorkomst Rijsbergen</name>
+  </wpt>
+  <wpt lat="51.542157672356922" lon="4.9402697729413747">
+    <name>Doorkomst Gilze</name>
+  </wpt>
+  <wpt lat="51.588358239611921" lon="4.9842356162714507">
+    <name>Doorkomst Tilburg</name>
+  </wpt>
+  <wpt lat="51.62134492385168" lon="4.9344785308349683">
+    <name>Doorkomst Dongen</name>
+  </wpt>
+  <wpt lat="51.565090929741118" lon="4.83239231467085">
+    <name>Doorkomst Bavel</name>
+  </wpt>
+  <wpt lat="51.572254457564007" lon="4.77843733200112">
+    <name>IPSO Inloophuis Honingraad</name>
+  </wpt>
+  <wpt lat="51.5642724677365" lon="4.7574959205006344">
+    <name>Doorkomst Breda</name>
+  </wpt>
+  <wpt lat="51.571153448242427" lon="4.6372215374027048">
+    <name>Doorkomst Etten-Leur</name>
+  </wpt>
+  <wpt lat="51.537786580576707" lon="4.5986361691460491">
+    <name>Doorkomst Sprundel</name>
+  </wpt>
+  <wpt lat="51.581621386414668" lon="4.5853332889463028">
+    <name>Doorkomst Hoeven</name>
+  </wpt>
+  <wpt lat="51.589055928712867" lon="4.5300417227639844">
+    <name>Doorkomst Oudenbosch</name>
+  </wpt>
+  <wpt lat="51.587542064940862" lon="4.459980886757533">
+    <name>Doorkomst Oud Gastel</name>
+  </wpt>
+  <wpt lat="51.515845070571316" lon="4.4754315066582446">
+    <name>IPSO Inloophuis Rose-Linde</name>
+  </wpt>
+  <wpt lat="51.53304604026701" lon="4.456905950227692">
+    <name>Doorkomst Roosendaal</name>
+  </wpt>
+  <wpt lat="51.394687005331967" lon="4.3332322580121918">
+    <name>Doorkomst Ossendrecht</name>
+  </wpt>
+  <wpt lat="51.434314529436257" lon="4.3190023506731734">
+    <name>Doorkomst Hoogerheide</name>
+  </wpt>
+  <wpt lat="51.477959571017578" lon="4.3020852723141161">
+    <name>Doorkomst Bergen op Zoom (Antwerpsestraatweg)</name>
+  </wpt>
+  <wpt lat="51.49911916968189" lon="4.2827115941537759">
+    <name>Doorkomst Bergen op Zoom (t Rijks)</name>
+  </wpt>
+  <wpt lat="51.534165389513582" lon="4.2714405175290171">
+    <name>Doorkomst Halsteren</name>
+  </wpt>
+  <wpt lat="51.676188173962892" lon="4.4317354635924193">
+    <name>Doorkomst Helwijk</name>
+  </wpt>
+  <wpt lat="51.691910523629723" lon="4.4379067737855689">
+    <name>Doorkomst Willenstad (Koepelkerk)</name>
+  </wpt>
+  <wpt lat="51.694006483990051" lon="4.4410426978300492">
+    <name>Doorkomst Willenstad (Haven)</name>
+  </wpt>
+  <wpt lat="51.7403978462977" lon="4.4397125273033833">
+    <name>Doorkomst Numansdorp</name>
+  </wpt>
+  <wpt lat="51.814749824812253" lon="4.4146138351436743">
+    <name>Doorkomst Oud-Beijerland (Langeweg)</name>
+  </wpt>
+  <wpt lat="51.819424252963039" lon="4.4155406842038758">
+    <name>Doorkomst Oud-Beijerland (CreActief)</name>
+  </wpt>
+  <wpt lat="51.824885092884422" lon="4.4120318966048639">
+    <name>Doorkomst Oud-Beijerland (Scheepmakershaven)</name>
+  </wpt>
+  <wpt lat="51.826996813378123" lon="4.4119212090481241">
+    <name>Doorkomst Oud-Beijerland (Centrum)</name>
+  </wpt>
+  <wpt lat="51.826835033263173" lon="4.4132181941116722">
+    <name>Doorkomst Oud-Beijerland (Bierkade)</name>
+  </wpt>
+  <wpt lat="51.822782787982923" lon="4.437475401457851">
+    <name>Doorkomst Oud-Beijerland (Beukelszstraat)</name>
+  </wpt>
+  <wpt lat="51.841368438927539" lon="4.5366572113596737">
+    <name>ROPARUN Samenvoeging routes NL en FR</name>
+  </wpt>
+  <wpt lat="51.8577642268808" lon="4.5332441386260758">
+    <name>Doorkomst Barendrecht</name>
+  </wpt>
+  <wpt lat="51.85828748445779" lon="4.5141209778199576">
+    <name>Hospice De Reiziger</name>
+  </wpt>
+  <wpt lat="51.878927833206717" lon="4.5096652145671339">
+    <name>Doorkomst Lombardijen</name>
+  </wpt>
+</gpx>

@@ -1,24 +1,31 @@
-"""Load the official Roparun 2026 V3 route set into the DB.
+"""Load the official Roparun 2026 route set into the DB.
 
-Reads the 24 GPX files under ``backend/data/gpx/2026/`` and builds a single
-``Route`` named "Roparun 2026 V3" for team ``conclusion`` / event 2026.
+Reads the GPX files under ``backend/data/gpx/2026/`` and builds a
+``Route`` named "Roparun 2026 V<n>" for team ``conclusion`` / event
+2026. The version <n> is detected from the filenames (Roparun ships
+multiple iterations through the year — V3 ≈ March handbook,
+V4 = final, published the Friday before the run); when a directory
+contains multiple versions side-by-side, the loader picks the highest
+and ignores the others, so dropping V4 alongside an existing V3 set
+just adds a fresh V4 route without disturbing the V3 history.
 
 Only two files carry actual tracks (``<trkseg>``): the runners line and the
 B-vehicle line. Everything else is a pure waypoint set — even the per-vehicle
 "toegestaan/verboden" overlays are represented as dense point clouds in the
-source data. The loader maps each filename to a (kind, category) pair so we
-can style and filter them on the map.
+source data. The loader maps each filename descriptor to a (kind, category)
+pair so we can style and filter them on the map.
 
 Usage (inside the api container):
 
     python -m app.scripts.load_roparun_2026
 
-Idempotent: running twice replaces the route's content each time.
+Idempotent: running twice replaces the matching route's content each time.
 """
 
 from __future__ import annotations
 
 import asyncio
+import re
 import sys
 import uuid
 from pathlib import Path
@@ -75,22 +82,28 @@ WAYPOINT_KINDS: dict[str, tuple[WaypointKind, str]] = {
     "C voertuig - Niet op route": (WaypointKind.poi, "vehicle_c_off_route"),
 }
 
-_PREFIX = "2026V3 - "
-_SUFFIX = " - Frankrijk - Roparun.gpx"
+# Filenames look like: "2026V3 - Lopers track - Frankrijk - Roparun.gpx"
+# or "2026V4 - …". The regex captures the version digit(s) and the
+# descriptor (the bit between the version prefix and the country suffix)
+# so the loader works across whichever iteration the organiser publishes.
+_FILENAME_RE = re.compile(r"^2026V(\d+) - (.+) - Frankrijk - Roparun\.gpx$")
 
 
-def _descriptor(path: Path) -> str:
-    name = path.name
-    if name.startswith(_PREFIX):
-        name = name[len(_PREFIX) :]
-    if name.endswith(_SUFFIX):
-        name = name[: -len(_SUFFIX)]
-    return name
+def _parse_filename(path: Path) -> tuple[int, str] | None:
+    """Return (version, descriptor) or None if the filename doesn't match
+    the published Roparun naming convention."""
+    m = _FILENAME_RE.match(path.name)
+    if not m:
+        return None
+    return int(m.group(1)), m.group(2)
 
 
-def _parse_file(path: Path, next_ordinal: int) -> tuple[list[StageIn], list[WaypointIn], int]:
-    """Parse one GPX file and return (stages, waypoints, new next_ordinal)."""
-    desc = _descriptor(path)
+def _parse_file(
+    path: Path, desc: str, next_ordinal: int
+) -> tuple[list[StageIn], list[WaypointIn], int]:
+    """Parse one GPX file and return (stages, waypoints, new next_ordinal).
+    `desc` is the filename descriptor (already extracted by the caller),
+    used to map the file to a layer/category in TRACK_LAYERS / WAYPOINT_KINDS."""
     with path.open("r", encoding="utf-8-sig") as fp:
         gpx = gpxpy.parse(fp)
 
@@ -135,8 +148,10 @@ def _parse_file(path: Path, next_ordinal: int) -> tuple[list[StageIn], list[Wayp
     return stages, waypoints, next_ordinal
 
 
-async def _ensure_route() -> tuple[uuid.UUID, bool]:
-    """Make sure team/event/route exist, return (route_id, created_now)."""
+async def _ensure_route(route_name: str) -> tuple[uuid.UUID, bool]:
+    """Make sure team/event/route exist, return (route_id, created_now).
+    Looks up the route by (event, exact name) so each detected version
+    lands as its own row; previous versions stay around for history."""
     async with SessionLocal() as session:
         team = (
             await session.execute(select(Team).where(Team.slug == "conclusion"))
@@ -156,14 +171,14 @@ async def _ensure_route() -> tuple[uuid.UUID, bool]:
 
         route = (
             await session.execute(
-                select(Route).where(Route.event_id == event.id, Route.name == "Roparun 2026 V3")
+                select(Route).where(Route.event_id == event.id, Route.name == route_name)
             )
         ).scalar_one_or_none()
         created = False
         if route is None:
             route = Route(
                 event_id=event.id,
-                name="Roparun 2026 V3",
+                name=route_name,
                 status=RouteStatus.published,
             )
             session.add(route)
@@ -180,14 +195,45 @@ async def main() -> None:
     if not DATA_DIR.is_dir():
         raise SystemExit(f"GPX source directory not found: {DATA_DIR}")
 
-    files = sorted(DATA_DIR.glob("*.gpx"))
-    print(f"Loading {len(files)} GPX files from {DATA_DIR}")
+    # Group files by detected version. Anything that doesn't match the
+    # 2026V<n> naming is logged once and skipped — keeps unrelated files
+    # in the data dir (READMEs, stray exports) from breaking the load.
+    versioned: dict[int, list[tuple[Path, str]]] = {}
+    unmatched: list[Path] = []
+    for path in sorted(DATA_DIR.glob("*.gpx")):
+        parsed = _parse_filename(path)
+        if parsed is None:
+            unmatched.append(path)
+            continue
+        version, desc = parsed
+        versioned.setdefault(version, []).append((path, desc))
+
+    if unmatched:
+        for p in unmatched:
+            print(f"  ! skipping (unrecognised filename): {p.name}", file=sys.stderr)
+
+    if not versioned:
+        raise SystemExit("No 2026V<n> GPX files found — aborting.")
+
+    # Use the highest version present. Mixed-version dirs (V3 + V4 both
+    # dropped in) load only the newest set; the older files are reported
+    # for visibility but not parsed.
+    target_version = max(versioned.keys())
+    other_versions = sorted(v for v in versioned if v != target_version)
+    if other_versions:
+        skipped = sum(len(versioned[v]) for v in other_versions)
+        print(
+            f"Found versions {sorted(versioned)}; loading V{target_version} only "
+            f"({skipped} file(s) from older version(s) skipped)."
+        )
+    else:
+        print(f"Loading {len(versioned[target_version])} GPX files (V{target_version}).")
 
     all_stages: list[StageIn] = []
     all_waypoints: list[WaypointIn] = []
     next_ordinal = 0
-    for path in files:
-        stages, waypoints, next_ordinal = _parse_file(path, next_ordinal)
+    for path, desc in versioned[target_version]:
+        stages, waypoints, next_ordinal = _parse_file(path, desc, next_ordinal)
         print(f"  {path.name}: +{len(stages)} stages, +{len(waypoints)} waypoints")
         all_stages.extend(stages)
         all_waypoints.extend(waypoints)
@@ -195,9 +241,10 @@ async def main() -> None:
     if not all_stages and not all_waypoints:
         raise SystemExit("No data parsed from GPX files — aborting.")
 
-    route_id, created = await _ensure_route()
+    route_name = f"Roparun 2026 V{target_version}"
+    route_id, created = await _ensure_route(route_name)
     print(
-        f"{'Created' if created else 'Updating'} route {route_id} "
+        f"{'Created' if created else 'Updating'} route {route_id} ({route_name}) "
         f"with {len(all_stages)} stages and {len(all_waypoints)} waypoints"
     )
 

@@ -342,27 +342,25 @@ export function Planner({ apiKey }: PlannerProps) {
 
       // Team A / Team B leg overlay. The runners track is sliced at
       // every wissel point and tagged with team=A|B alternating from
-      // the start. Rendered as a thicker stroke underneath the stages
-      // line so the team colour reads through at every zoom but stage
-      // markers still sit on top. Hidden until at least one wissel
-      // exists (otherwise it's identical to the runners line).
+      // the start. Added AFTER stages-line so it renders on top — the
+      // existing runners-stages red line would otherwise mask the team
+      // colours. Vehicle stages (different ordinals, different geometry)
+      // are unaffected. Empty when no wissels exist yet, so a fresh
+      // GPX without team changes still shows the original stages line.
       map.addSource("team-legs", {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
       });
-      map.addLayer(
-        {
-          id: "team-legs-line",
-          type: "line",
-          source: "team-legs",
-          paint: {
-            "line-color": ["get", "color"],
-            "line-width": 8,
-            "line-opacity": 0.55,
-          },
+      map.addLayer({
+        id: "team-legs-line",
+        type: "line",
+        source: "team-legs",
+        paint: {
+          "line-color": ["get", "color"],
+          "line-width": 5,
+          "line-opacity": 0.95,
         },
-        "stages-line",
-      );
+      });
       // Snip window: red glow under the runners line for the portion
       // the user has selected to remove.
       map.addSource("snip-window", {

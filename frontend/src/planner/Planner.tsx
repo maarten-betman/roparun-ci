@@ -32,6 +32,19 @@ interface PlannerProps {
 
 const STAGE_PALETTE = ["#0b3d91", "#e63946", "#2a9d8f", "#f4a261", "#6d597a", "#386641"];
 const TEAM_CHANGE_CATEGORY = "team_changes";
+// Alternating colours for the two relay teams. Team A starts at Clastres,
+// Team B takes over at the first wissel, and they swap at every wissel
+// thereafter. Chosen to be visually distinct from the runners-track
+// yellow + the vehicle-overlay blues already in the viewer catalog.
+const TEAM_A_COLOR = "#7c3aed"; // violet
+const TEAM_B_COLOR = "#0ea5e9"; // sky
+const TEAM_LABELS: ["A", "B"] = ["A", "B"];
+function teamForLegIndex(i: number): "A" | "B" {
+  return TEAM_LABELS[i % 2];
+}
+function teamColor(team: "A" | "B"): string {
+  return team === "A" ? TEAM_A_COLOR : TEAM_B_COLOR;
+}
 /** Heuristic recogniser for a "team change" waypoint when reading the
  *  route back from the server. The canonical marker is
  *  `category === TEAM_CHANGE_CATEGORY`, but older saves used different
@@ -326,6 +339,30 @@ export function Planner({ apiKey }: PlannerProps) {
         source: "stages",
         paint: { "line-color": ["get", "color"], "line-width": 4 },
       });
+
+      // Team A / Team B leg overlay. The runners track is sliced at
+      // every wissel point and tagged with team=A|B alternating from
+      // the start. Rendered as a thicker stroke underneath the stages
+      // line so the team colour reads through at every zoom but stage
+      // markers still sit on top. Hidden until at least one wissel
+      // exists (otherwise it's identical to the runners line).
+      map.addSource("team-legs", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      map.addLayer(
+        {
+          id: "team-legs-line",
+          type: "line",
+          source: "team-legs",
+          paint: {
+            "line-color": ["get", "color"],
+            "line-width": 8,
+            "line-opacity": 0.55,
+          },
+        },
+        "stages-line",
+      );
       // Snip window: red glow under the runners line for the portion
       // the user has selected to remove.
       map.addSource("snip-window", {
@@ -398,6 +435,42 @@ export function Planner({ apiKey }: PlannerProps) {
       if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 40, duration: 400 });
     }
   }, [detail, mapReady]);
+
+  // Push the team-A/B leg overlay into the map. Slices the runners
+  // track at every wissel and emits one LineString feature per leg,
+  // tagged with team A or B starting with A from km 0. Includes a
+  // tail leg from the last wissel to the finish so the colour pattern
+  // covers the whole route instead of stopping at km 518.7. Source
+  // ends up empty when there are no wissels yet (the runners line
+  // shows through as-is).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    const src = map.getSource("team-legs") as maplibregl.GeoJSONSource | undefined;
+    if (!src) return;
+    if (!runnersTrack || !runnersCum || teamChanges.length === 0) {
+      src.setData({ type: "FeatureCollection", features: [] });
+      return;
+    }
+    const totalM = runnersCum[runnersCum.length - 1] ?? 0;
+    // Build leg bounds: [0, tc0.alongM, tc1.alongM, …, totalM].
+    const bounds: number[] = [0, ...teamChanges.map((t) => t.alongM), totalM];
+    const features: GeoJSON.Feature[] = [];
+    for (let i = 0; i < bounds.length - 1; i++) {
+      const fromM = bounds[i];
+      const toM = bounds[i + 1];
+      if (toM - fromM < 1) continue; // skip zero-length legs (duplicate wissels)
+      const slice = sliceByDistance(runnersTrack, runnersCum, fromM, toM);
+      if (slice.length < 2) continue;
+      const team = teamForLegIndex(i);
+      features.push({
+        type: "Feature",
+        properties: { team, color: teamColor(team), legIndex: i },
+        geometry: { type: "LineString", coordinates: slice },
+      });
+    }
+    src.setData({ type: "FeatureCollection", features });
+  }, [teamChanges, runnersTrack, runnersCum, mapReady]);
 
   // Sync teamChanges from the loaded route, auto-placing evenly along the
   // runners track when there are none. Keyed on `detail.id` only — pace
@@ -1235,6 +1308,41 @@ export function Planner({ apiKey }: PlannerProps) {
                   the {OFFICIAL_WISSELS_2026.length} official 2026 wissels;
                   use ↻ Official 2026 om handmatige edits te resetten.
                 </div>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 10,
+                    fontSize: 11,
+                    color: "#374151",
+                    marginBottom: 6,
+                    alignItems: "center",
+                  }}
+                >
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                    <span
+                      style={{
+                        display: "inline-block",
+                        width: 14,
+                        height: 6,
+                        background: TEAM_A_COLOR,
+                        borderRadius: 2,
+                      }}
+                    />
+                    Team A (start)
+                  </span>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                    <span
+                      style={{
+                        display: "inline-block",
+                        width: 14,
+                        height: 6,
+                        background: TEAM_B_COLOR,
+                        borderRadius: 2,
+                      }}
+                    />
+                    Team B
+                  </span>
+                </div>
                 <ol style={{ padding: 0, listStyle: "none", margin: 0 }}>
                   {teamChanges.map((tc, i) => {
                     // Length of the relay leg ENDING at this team change —
@@ -1250,12 +1358,18 @@ export function Planner({ apiKey }: PlannerProps) {
                     const cumOffsetMin = teamChanges
                       .slice(0, i + 1)
                       .reduce((sum, x) => sum + x.offsetMin, 0);
+                    // Two relay teams alternate from the start: leg i is
+                    // run by teamForLegIndex(i). Card i represents the
+                    // wissel where leg i ends and leg i+1 begins, so the
+                    // outgoing/incoming pair is (i, i+1).
+                    const outgoing = teamForLegIndex(i);
+                    const incoming = teamForLegIndex(i + 1);
                     return (
                     <li
                       key={tc.key}
                       style={{
                         border: "1px solid #e5e7eb",
-                        borderLeft: "4px solid #f43f5e",
+                        borderLeft: `4px solid ${teamColor(incoming)}`,
                         padding: 8,
                         borderRadius: 6,
                         marginBottom: 6,
@@ -1273,7 +1387,32 @@ export function Planner({ apiKey }: PlannerProps) {
                         }}
                       >
                         <span style={{ fontSize: 12, color: "#374151" }}>
-                          #{i + 1} · km {(tc.alongM / 1000).toFixed(1)}{" "}
+                          #{i + 1}{" "}
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 2,
+                              fontSize: 10,
+                              fontWeight: 700,
+                              padding: "1px 5px",
+                              borderRadius: 999,
+                              background: teamColor(outgoing),
+                              color: "#fff",
+                              verticalAlign: "1px",
+                            }}
+                            title={`Team ${outgoing} finishes here, Team ${incoming} takes over`}
+                          >
+                            {outgoing}
+                            <span aria-hidden style={{ opacity: 0.7 }}>→</span>
+                            <span style={{
+                              background: teamColor(incoming),
+                              padding: "0 4px",
+                              borderRadius: 999,
+                              marginLeft: -2,
+                            }}>{incoming}</span>
+                          </span>
+                          {" · km "}{(tc.alongM / 1000).toFixed(1)}{" "}
                           <span style={{ color: "#9ca3af" }}>
                             (+{segmentKm.toFixed(1)} km)
                           </span>

@@ -246,9 +246,11 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
           // Two looks in one layer: trace categories (vehicle road overlays)
           // get small, tightly-packed dots that visually read as a coloured
           // line; marker categories (CPs, handovers, etc.) get bigger circles
-          // with a white stroke for legibility. Marker radii were bumped so
-          // category dots are recognisable at country/region zoom levels —
-          // crew kept zooming in just to identify a single waypoint.
+          // with a white stroke for legibility. Marker radii were bumped
+          // again (3→5, 6→9, 10→14) — crew on phones found the dots too
+          // small to tap accurately at country/region zoom. Trace radii
+          // left alone so the dense vehicle-road point clouds keep reading
+          // as a coloured line and don't merge into blobs.
           // MapLibre forbids nesting a zoom-based `interpolate` inside a
           // `case`, so the zoom interpolation is the outer expression and
           // each stop's output branches on style.
@@ -257,11 +259,11 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
             ["linear"],
             ["zoom"],
             6,
-            ["case", ["==", ["get", "style"], "trace"], 1, 3],
+            ["case", ["==", ["get", "style"], "trace"], 1, 5],
             10,
-            ["case", ["==", ["get", "style"], "trace"], 2, 6],
+            ["case", ["==", ["get", "style"], "trace"], 2, 9],
             14,
-            ["case", ["==", ["get", "style"], "trace"], 3.5, 10],
+            ["case", ["==", ["get", "style"], "trace"], 3.5, 14],
           ],
           "circle-color": ["coalesce", ["get", "color"], DEFAULT_WP_COLOR],
           "circle-stroke-width": [
@@ -326,21 +328,22 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
         minzoom: 7,
         layout: {
           "icon-image": iconImageExpr as unknown as maplibregl.ExpressionSpecification,
-          // Bumped ~60% across the board: at country zoom an icon is
-          // about a thumbnail (~28 px); at neighbourhood zoom it reads
-          // clearly without needing to zoom further.
+          // Bumped a second time (≈ +40%) — at country zoom an icon is
+          // now a comfortable thumbnail (~40 px) and the emoji glyphs
+          // read clearly on phones without pinch-zooming. Source raster
+          // is 48 px @ pixelRatio 2 → effective max ≈ 75 px at zoom 16.
           "icon-size": [
             "interpolate",
             ["linear"],
             ["zoom"],
             7,
-            0.45,
+            0.65,
             10,
-            0.7,
+            1.0,
             14,
-            0.95,
+            1.35,
             16,
-            1.1,
+            1.55,
           ],
           "icon-allow-overlap": false,
           "icon-ignore-placement": false,

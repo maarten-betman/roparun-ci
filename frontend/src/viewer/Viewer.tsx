@@ -412,7 +412,13 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
         },
       });
 
-      map.on("mouseenter", "waypoints-circle", (e) => {
+      // Hover popup. Shared handler bound to both the circle layer
+      // (non-iconed POIs) and the icon symbol layer (CPs, handovers,
+      // water stops, …) — iconed features no longer render a circle,
+      // so without the symbol-layer binding they'd lose hover entirely.
+      const onHoverFeature = (
+        e: maplibregl.MapLayerMouseEvent | maplibregl.MapLayerTouchEvent,
+      ) => {
         const f = e.features?.[0];
         if (!f) return;
         // Hover popups are noisy on the dense trace clouds; only show them
@@ -425,11 +431,15 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
         const html = cat ? `<strong>${name}</strong><br>${cat}` : `<strong>${name}</strong>`;
         const geom = f.geometry as GeoJSON.Point;
         popup.setLngLat(geom.coordinates as [number, number]).setHTML(html).addTo(map);
-      });
-      map.on("mouseleave", "waypoints-circle", () => {
+      };
+      const onLeaveFeature = () => {
         map.getCanvas().style.cursor = "";
         popup.remove();
-      });
+      };
+      map.on("mouseenter", "waypoints-circle", onHoverFeature);
+      map.on("mouseleave", "waypoints-circle", onLeaveFeature);
+      map.on("mouseenter", "waypoints-icon", onHoverFeature);
+      map.on("mouseleave", "waypoints-icon", onLeaveFeature);
 
       // Signal to downstream effects that the style is loaded and all our
       // sources + layers exist. Everything that calls setFilter / setData
@@ -515,26 +525,34 @@ export function Viewer({ apiKey, publicPath }: ViewerProps) {
       map.setFilter("route-line", lineFilter as maplibregl.FilterSpecification);
     }
 
-    const allowedCats = [...visibleCategories];
-    const wpFilter =
-      allowedCats.length === 0
-        ? ["==", ["literal", "__none__"], ["literal", "__match__"]]
-        : ["any", ...allowedCats.map((k) => ["==", ["get", "category"], k])];
+    // Split the visible categories into iconed and non-iconed sets. The
+    // circle layer only renders non-iconed categories (trace clouds,
+    // generic POIs) — iconed categories get the emoji symbol layer
+    // instead. Without this split the circle was drawn UNDER the icon,
+    // showing as a coloured halo around every emoji.
+    const iconedCatSet = new Set(
+      Object.entries(WAYPOINT_CATEGORIES)
+        .filter(([, m]) => m.icon)
+        .map(([k]) => k),
+    );
+    const iconedVisible = [...visibleCategories].filter((k) => iconedCatSet.has(k));
+    const nonIconedVisible = [...visibleCategories].filter((k) => !iconedCatSet.has(k));
+
     if (map.getLayer("waypoints-circle")) {
+      const wpFilter =
+        nonIconedVisible.length === 0
+          ? ["==", ["literal", "__none__"], ["literal", "__match__"]]
+          : ["any", ...nonIconedVisible.map((k) => ["==", ["get", "category"], k])];
       map.setFilter("waypoints-circle", wpFilter as maplibregl.FilterSpecification);
     }
     if (map.getLayer("waypoints-icon")) {
       // Only features whose category has an icon registered should hit
       // this layer — prevents noisy "missing image" console warnings and
       // saves MapLibre from iterating 20k+ trace features for nothing.
-      const iconedCats = Object.entries(WAYPOINT_CATEGORIES)
-        .filter(([, m]) => m.icon)
-        .map(([k]) => k)
-        .filter((k) => visibleCategories.has(k));
       const iconFilter =
-        iconedCats.length === 0
+        iconedVisible.length === 0
           ? ["==", ["literal", "__none__"], ["literal", "__match__"]]
-          : ["any", ...iconedCats.map((k) => ["==", ["get", "category"], k])];
+          : ["any", ...iconedVisible.map((k) => ["==", ["get", "category"], k])];
       map.setFilter("waypoints-icon", iconFilter as maplibregl.FilterSpecification);
     }
   }, [visibleLayers, visibleCategories, mapReady]);

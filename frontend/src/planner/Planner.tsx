@@ -324,6 +324,19 @@ export function Planner({ apiKey }: PlannerProps) {
     });
     mapRef.current = map;
 
+    // Standard "show my location" control on the map canvas — same as the
+    // public viewer. Handy when planning on-site (e.g. scouting a wissel
+    // spot from the road). Pure client-side; nothing uploaded.
+    map.addControl(
+      new maplibregl.GeolocateControl({
+        positionOptions: { enableHighAccuracy: true },
+        trackUserLocation: true,
+        showAccuracyCircle: true,
+        showUserLocation: true,
+      }),
+      "top-right",
+    );
+
     const ro = new ResizeObserver(() => map.resize());
     ro.observe(containerRef.current);
     requestAnimationFrame(() => map.resize());

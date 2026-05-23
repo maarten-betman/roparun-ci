@@ -2,8 +2,14 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client";
-import type { RouteDetail, RouteSummary, Stage } from "../api/types";
+import type { RouteDetail, RouteSummary, Stage, Waypoint } from "../api/types";
 import { TopBar, TopBarButton } from "../chrome/TopBar";
+import {
+  WAYPOINT_CATEGORIES,
+  categoryColor,
+  categoryStyle,
+  defaultVisibleCategories,
+} from "../viewer/catalog";
 import { DEFAULT_CENTER, DEFAULT_ZOOM, mapStyle } from "../map/style";
 import {
   cumulativeDistances,
@@ -209,6 +215,35 @@ function runnersFeatureCollection(stages: Stage[]): GeoJSON.FeatureCollection {
   };
 }
 
+const POI_FALLBACK_COLOR = "#6b7280";
+
+/** Build the POI feature collection for the planner's reference layer.
+ *  Excludes team_changes — those are drawn as draggable 👥 markers and
+ *  would otherwise double-render. Mirrors the viewer's feature shape so
+ *  the same circle/icon paint expressions work. */
+function poiFeatureCollection(waypoints: Waypoint[]): GeoJSON.FeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: waypoints
+      .filter((w) => w.category !== TEAM_CHANGE_CATEGORY)
+      .map((w) => {
+        const meta = WAYPOINT_CATEGORIES[w.category ?? ""];
+        return {
+          type: "Feature",
+          properties: {
+            category: w.category ?? "",
+            categoryLabel: meta?.label ?? w.category ?? w.kind,
+            style: categoryStyle(w.category),
+            name: w.name ?? "",
+            color: categoryColor(w.category, POI_FALLBACK_COLOR),
+            icon: meta?.icon ?? "",
+          },
+          geometry: w.geom,
+        };
+      }),
+  };
+}
+
 interface TeamChange {
   /** Local-only key (React key + Marker ref). Not sent to the server —
    *  the /routes/{id}/content endpoint creates fresh waypoint rows. */
@@ -259,6 +294,10 @@ export function Planner({ apiKey }: PlannerProps) {
   // visible as "5 → 0 team changes" instead of looking like a no-op.
   const [savedAt, setSavedAt] = useState<{ at: number; count: number } | null>(null);
   const [teamChanges, setTeamChanges] = useState<TeamChange[]>([]);
+  // Reference POIs (checkpoints, water stops, …) from the loaded route.
+  // On by default; the dense per-meter vehicle/km clouds stay hidden
+  // (catalog default-visible set) so the planning view isn't swamped.
+  const [showPois, setShowPois] = useState(true);
   const [paceMinKm, setPaceMinKm] = useState<number>(() => loadPaceMinKm());
   const [paceDraft, setPaceDraft] = useState<string>(() => formatPaceMinKm(loadPaceMinKm()));
   const [startAt, setStartAt] = useState<Date | null>(() => loadStartAt());
@@ -415,6 +454,94 @@ export function Planner({ apiKey }: PlannerProps) {
           "circle-stroke-color": "#ffffff",
         },
       });
+
+      // Reference POIs from the loaded route (checkpoints, water stops,
+      // toilets, …). Mirrors the viewer: a circle layer for every POI
+      // plus an emoji symbol layer for iconed categories. Rasterise each
+      // emoji to a canvas image so colour glyphs render (the SDF font
+      // server returns tofu for emoji in text-field).
+      const iconPx = 48;
+      const iconCanvas = document.createElement("canvas");
+      iconCanvas.width = iconPx;
+      iconCanvas.height = iconPx;
+      const iconCtx = iconCanvas.getContext("2d");
+      if (iconCtx) {
+        iconCtx.textAlign = "center";
+        iconCtx.textBaseline = "middle";
+        iconCtx.font = `${Math.floor(iconPx * 0.8)}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji","Twemoji Mozilla",sans-serif`;
+        for (const [key, meta] of Object.entries(WAYPOINT_CATEGORIES)) {
+          if (!meta.icon) continue;
+          const imgId = `poi-${key}`;
+          if (map.hasImage(imgId)) continue;
+          iconCtx.clearRect(0, 0, iconPx, iconPx);
+          iconCtx.fillText(meta.icon, iconPx / 2, iconPx / 2);
+          map.addImage(imgId, iconCtx.getImageData(0, 0, iconPx, iconPx), { pixelRatio: 2 });
+        }
+      }
+      map.addSource("pois", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      map.addLayer({
+        id: "pois-circle",
+        type: "circle",
+        source: "pois",
+        paint: {
+          "circle-radius": [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            6,
+            ["case", ["==", ["get", "style"], "trace"], 1, 4],
+            14,
+            ["case", ["==", ["get", "style"], "trace"], 3, 9],
+          ],
+          "circle-color": ["coalesce", ["get", "color"], POI_FALLBACK_COLOR],
+          "circle-stroke-width": ["case", ["==", ["get", "style"], "trace"], 0, 1],
+          "circle-stroke-color": "#ffffff",
+          "circle-opacity": ["case", ["==", ["get", "style"], "trace"], 0.85, 1],
+        },
+      });
+      const poiIconMatch: string[] = [];
+      for (const [k, m] of Object.entries(WAYPOINT_CATEGORIES)) {
+        if (m.icon) poiIconMatch.push(k, `poi-${k}`);
+      }
+      map.addLayer({
+        id: "pois-icon",
+        type: "symbol",
+        source: "pois",
+        minzoom: 7,
+        layout: {
+          "icon-image": ["match", ["get", "category"], ...poiIconMatch, ""] as unknown as maplibregl.ExpressionSpecification,
+          "icon-size": ["interpolate", ["linear"], ["zoom"], 7, 0.5, 14, 1.0],
+          "icon-allow-overlap": false,
+        },
+      });
+
+      const poiPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false });
+      const onPoiEnter = (
+        e: maplibregl.MapLayerMouseEvent | maplibregl.MapLayerTouchEvent,
+      ) => {
+        const f = e.features?.[0];
+        if (!f || (f.properties?.style as string) === "trace") return;
+        map.getCanvas().style.cursor = "pointer";
+        const name = (f.properties?.name as string) || "POI";
+        const label = (f.properties?.categoryLabel as string) || "";
+        const html = label ? `<strong>${name}</strong><br>${label}` : `<strong>${name}</strong>`;
+        poiPopup
+          .setLngLat((f.geometry as GeoJSON.Point).coordinates as [number, number])
+          .setHTML(html)
+          .addTo(map);
+      };
+      const onPoiLeave = () => {
+        map.getCanvas().style.cursor = "";
+        poiPopup.remove();
+      };
+      map.on("mouseenter", "pois-circle", onPoiEnter);
+      map.on("mouseleave", "pois-circle", onPoiLeave);
+      map.on("mouseenter", "pois-icon", onPoiEnter);
+      map.on("mouseleave", "pois-icon", onPoiLeave);
+
       setMapReady(true);
     });
 
@@ -446,6 +573,27 @@ export function Planner({ apiKey }: PlannerProps) {
       if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 40, duration: 400 });
     }
   }, [detail, mapReady]);
+
+  // Push POIs into the reference layer + apply the show/hide toggle and
+  // the catalog default-visible category filter (keeps the dense km /
+  // vehicle clouds off so the planning view stays legible). Re-runs when
+  // the route loads or the toggle flips.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    (map.getSource("pois") as maplibregl.GeoJSONSource | undefined)?.setData(
+      detail ? poiFeatureCollection(detail.waypoints) : { type: "FeatureCollection", features: [] },
+    );
+    const visibleCats = [...defaultVisibleCategories()].filter(
+      (c) => c !== TEAM_CHANGE_CATEGORY,
+    );
+    const filter =
+      !showPois || visibleCats.length === 0
+        ? (["==", ["literal", "__none__"], ["literal", "__match__"]] as unknown as maplibregl.FilterSpecification)
+        : (["any", ...visibleCats.map((c) => ["==", ["get", "category"], c])] as unknown as maplibregl.FilterSpecification);
+    if (map.getLayer("pois-circle")) map.setFilter("pois-circle", filter);
+    if (map.getLayer("pois-icon")) map.setFilter("pois-icon", filter);
+  }, [detail, mapReady, showPois]);
 
   // Push the team-A/B leg overlay into the map. Slices the runners
   // track at every wissel and emits one LineString feature per leg,
@@ -1259,6 +1407,30 @@ export function Planner({ apiKey }: PlannerProps) {
                   />
                   <span style={{ color: "#6b7280" }}>
                     starttijd {startAt ? "" : "(optioneel)"}
+                  </span>
+                </label>
+              </section>
+
+              <section style={{ marginBottom: 16 }}>
+                <label
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    alignItems: "center",
+                    fontSize: 13,
+                    cursor: "pointer",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={showPois}
+                    onChange={(e) => setShowPois(e.target.checked)}
+                  />
+                  <span>
+                    POI's tonen{" "}
+                    <span style={{ color: "#6b7280" }}>
+                      (checkpoints, water, toiletten, slaapplaatsen…)
+                    </span>
                   </span>
                 </label>
               </section>

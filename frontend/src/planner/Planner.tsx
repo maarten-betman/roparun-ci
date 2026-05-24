@@ -107,6 +107,37 @@ function fmtKm(meters: number | null | undefined): string {
   return `${(meters / 1000).toFixed(1)} km`;
 }
 
+function fmtClock(ms: number | null | undefined): string {
+  if (ms == null) return "–";
+  return new Date(ms).toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" });
+}
+
+function fmtDuration(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}u${String(m).padStart(2, "0")}`;
+  if (m > 0) return `${m}m${String(sec).padStart(2, "0")}`;
+  return `${sec}s`;
+}
+
+/** m/s → km/h, one decimal. */
+function fmtSpeed(mps: number | null | undefined): string {
+  if (mps == null) return "–";
+  return `${(mps * 3.6).toFixed(1)} km/u`;
+}
+
+/** Label/value row for the live-leg panel. */
+function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+      <span style={{ color: "#6b7280" }}>{label}</span>
+      <span style={{ fontWeight: strong ? 700 : 500, color: "#111827" }}>{value}</span>
+    </div>
+  );
+}
+
 /** Snap the official wissel list to a loaded runners track. Each entry's
  *  km is clamped to the track length so a slightly-shorter V3 GPX still
  *  produces sensible markers (later wissels would pile up at the end
@@ -298,6 +329,13 @@ export function Planner({ apiKey }: PlannerProps) {
   // On by default; the dense per-meter vehicle/km clouds stay hidden
   // (catalog default-visible set) so the planning view isn't swamped.
   const [showPois, setShowPois] = useState(true);
+  // Live-leg tracker (event-day use). `livePos` is fed by the
+  // GeolocateControl's geolocate event; `legStart` is stamped when the
+  // user taps "Start leg" (current along-track distance + wall clock).
+  const [livePos, setLivePos] = useState<
+    { lng: number; lat: number; ts: number; accuracy: number } | null
+  >(null);
+  const [legStart, setLegStart] = useState<{ alongM: number; ts: number } | null>(null);
   const [paceMinKm, setPaceMinKm] = useState<number>(() => loadPaceMinKm());
   const [paceDraft, setPaceDraft] = useState<string>(() => formatPaceMinKm(loadPaceMinKm()));
   const [startAt, setStartAt] = useState<Date | null>(() => loadStartAt());
@@ -328,6 +366,60 @@ export function Planner({ apiKey }: PlannerProps) {
   const runnersCumRef = useRef<number[] | null>(null);
   runnersTrackRef.current = runnersTrack;
   runnersCumRef.current = runnersCum;
+
+  // Wall clock that ticks every second while a leg is being tracked, so
+  // elapsed time / average speed / ETA stay live without a new GPS fix.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!legStart) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [legStart]);
+
+  // Snap the live GPS fix onto the runners track → current distance along
+  // the route + how far off-track the fix is (warn the user if large).
+  const liveSnap = useMemo(() => {
+    if (!livePos || !runnersTrack || !runnersCum) return null;
+    const s = snapToTrack(runnersTrack, runnersCum, [livePos.lng, livePos.lat]);
+    return { alongM: s.alongM, offsetM: s.offsetM };
+  }, [livePos, runnersTrack, runnersCum]);
+
+  // Everything the live-leg panel needs, derived in one place.
+  const legStats = useMemo(() => {
+    if (!liveSnap) return null;
+    const currentM = liveSnap.alongM;
+    // Next team change ahead of the current position (sorted by alongM).
+    const sorted = [...teamChanges].sort((a, b) => a.alongM - b.alongM);
+    const nextChange = sorted.find((t) => t.alongM > currentM + 1) ?? null;
+    let legM: number | null = null;
+    let avgMps: number | null = null;
+    let etaMs: number | null = null;
+    if (legStart) {
+      legM = Math.max(0, currentM - legStart.alongM);
+      const elapsedS = Math.max(1, (now - legStart.ts) / 1000);
+      avgMps = legM / elapsedS;
+      if (nextChange && avgMps > 0.3) {
+        const remainingM = nextChange.alongM - currentM;
+        etaMs = now + (remainingM / avgMps) * 1000;
+      }
+    }
+    return {
+      currentM,
+      offsetM: liveSnap.offsetM,
+      nextChange,
+      toNextM: nextChange ? nextChange.alongM - currentM : null,
+      legM,
+      avgMps,
+      etaMs,
+    };
+  }, [liveSnap, teamChanges, legStart, now]);
+
+  const startLeg = () => {
+    if (!liveSnap) return;
+    setLegStart({ alongM: liveSnap.alongM, ts: Date.now() });
+    setNow(Date.now());
+  };
+  const resetLeg = () => setLegStart(null);
 
   const refreshRoutes = useCallback(async () => {
     try {
@@ -365,16 +457,25 @@ export function Planner({ apiKey }: PlannerProps) {
 
     // Standard "show my location" control on the map canvas — same as the
     // public viewer. Handy when planning on-site (e.g. scouting a wissel
-    // spot from the road). Pure client-side; nothing uploaded.
-    map.addControl(
-      new maplibregl.GeolocateControl({
-        positionOptions: { enableHighAccuracy: true },
-        trackUserLocation: true,
-        showAccuracyCircle: true,
-        showUserLocation: true,
-      }),
-      "top-right",
-    );
+    // spot from the road). Pure client-side; nothing uploaded. We also
+    // tap its `geolocate` event to drive the live-leg tracker panel, so
+    // there's only one GPS watch running (battery-friendly).
+    const geolocate = new maplibregl.GeolocateControl({
+      positionOptions: { enableHighAccuracy: true },
+      trackUserLocation: true,
+      showAccuracyCircle: true,
+      showUserLocation: true,
+    });
+    geolocate.on("geolocate", (e) => {
+      const pos = e as unknown as GeolocationPosition;
+      setLivePos({
+        lng: pos.coords.longitude,
+        lat: pos.coords.latitude,
+        ts: pos.timestamp,
+        accuracy: pos.coords.accuracy,
+      });
+    });
+    map.addControl(geolocate, "top-right");
 
     const ro = new ResizeObserver(() => map.resize());
     ro.observe(containerRef.current);
@@ -1354,6 +1455,126 @@ export function Planner({ apiKey }: PlannerProps) {
               </section>
 
               <PairingPanel teamSlug={PAIRING_TEAM_SLUG} year={PAIRING_YEAR} />
+
+              {/* Live-leg tracker — event-day tool. Activate the location
+                  control (top-right of the map) first; once a GPS fix is
+                  flowing, "Start etappe" stamps the current position and
+                  the panel shows distance run, average speed, and a
+                  projected arrival time at the next wissel. */}
+              <section
+                style={{
+                  marginBottom: 16,
+                  border: "1px solid #e5e7eb",
+                  borderRadius: 8,
+                  padding: 10,
+                  background: legStart ? "#f0fdf4" : "#f9fafb",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: 8,
+                  }}
+                >
+                  <h2
+                    style={{
+                      fontSize: 11,
+                      textTransform: "uppercase",
+                      color: "#6b7280",
+                      letterSpacing: "0.05em",
+                      margin: 0,
+                    }}
+                  >
+                    Live etappe
+                  </h2>
+                  {legStart ? (
+                    <button
+                      type="button"
+                      onClick={resetLeg}
+                      style={{
+                        background: "none",
+                        border: 0,
+                        color: "#dc2626",
+                        fontSize: 11,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Reset
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={startLeg}
+                      disabled={!liveSnap}
+                      style={{
+                        background: liveSnap ? "#2a9d8f" : "#9ca3af",
+                        border: 0,
+                        color: "#fff",
+                        fontSize: 12,
+                        padding: "4px 10px",
+                        borderRadius: 6,
+                        cursor: liveSnap ? "pointer" : "default",
+                      }}
+                    >
+                      Start etappe
+                    </button>
+                  )}
+                </div>
+
+                {!liveSnap ? (
+                  <div style={{ fontSize: 12, color: "#6b7280" }}>
+                    Activeer je locatie met de knop rechtsboven op de kaart om
+                    de live etappe te volgen.
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+                    <Row label="Totaal afgelegd" value={fmtKm(legStats?.currentM)} />
+                    {legStart && (
+                      <>
+                        <Row label="Deze etappe" value={fmtKm(legStats?.legM)} />
+                        <Row
+                          label="Tijd onderweg"
+                          value={fmtDuration((now - legStart.ts) / 1000)}
+                        />
+                        <Row label="Gem. snelheid" value={fmtSpeed(legStats?.avgMps)} />
+                      </>
+                    )}
+                    <div style={{ borderTop: "1px solid #e5e7eb", margin: "4px 0" }} />
+                    {legStats?.nextChange ? (
+                      <>
+                        <Row
+                          label="Volgende wissel"
+                          value={legStats.nextChange.name || "—"}
+                        />
+                        <Row label="Afstand tot wissel" value={fmtKm(legStats.toNextM)} />
+                        <Row
+                          label="Verwachte aankomst"
+                          value={
+                            legStats.etaMs
+                              ? fmtClock(legStats.etaMs)
+                              : legStart
+                                ? "loop door…"
+                                : "start de etappe"
+                          }
+                          strong
+                        />
+                      </>
+                    ) : (
+                      <div style={{ fontSize: 12, color: "#6b7280" }}>
+                        Voorbij de laatste wissel — op weg naar de finish.
+                      </div>
+                    )}
+                    {legStats && legStats.offsetM > 150 && (
+                      <div style={{ fontSize: 11, color: "#b45309", marginTop: 2 }}>
+                        ⚠️ {Math.round(legStats.offsetM)} m van de lopersroute —
+                        afstanden zijn geprojecteerd op de route.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
 
               {/* Pace + start moment drive the prospected times shown on
                   each team change. Pace defaults to 5:00 min/km (≈12 km/h,

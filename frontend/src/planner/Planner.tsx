@@ -68,7 +68,22 @@ function isTeamChangeWaypoint(w: { kind?: string; category?: string | null; name
 const PACE_KEY = "roparun-planner-pace-minkm-v1";
 const PACE_LEGACY_KMH_KEY = "roparun-planner-pace-kmh-v1";
 const START_KEY = "roparun-planner-start-v1";
+// Active live-leg start (alongM + ts). Persisted so a page refresh
+// mid-etappe doesn't lose the elapsed-time / average-speed baseline.
+const LEG_START_KEY = "roparun-planner-legstart-v1";
 const DEFAULT_PACE_MIN_PER_KM = 5.0; // ≈ 12 km/h, a typical Roparun relay pace.
+
+function loadLegStart(): { alongM: number; ts: number } | null {
+  try {
+    const raw = localStorage.getItem(LEG_START_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as { alongM: number; ts: number };
+    if (typeof v.alongM === "number" && typeof v.ts === "number") return v;
+  } catch {
+    // ignore malformed value
+  }
+  return null;
+}
 
 /** Official wissel (runner-change) locations for the 2026
  *  Paris → Rotterdam route, from the Roparun organisation's V3
@@ -335,7 +350,9 @@ export function Planner({ apiKey }: PlannerProps) {
   const [livePos, setLivePos] = useState<
     { lng: number; lat: number; ts: number; accuracy: number } | null
   >(null);
-  const [legStart, setLegStart] = useState<{ alongM: number; ts: number } | null>(null);
+  const [legStart, setLegStart] = useState<{ alongM: number; ts: number } | null>(
+    () => loadLegStart(),
+  );
   const [paceMinKm, setPaceMinKm] = useState<number>(() => loadPaceMinKm());
   const [paceDraft, setPaceDraft] = useState<string>(() => formatPaceMinKm(loadPaceMinKm()));
   const [startAt, setStartAt] = useState<Date | null>(() => loadStartAt());
@@ -416,10 +433,15 @@ export function Planner({ apiKey }: PlannerProps) {
 
   const startLeg = () => {
     if (!liveSnap) return;
-    setLegStart({ alongM: liveSnap.alongM, ts: Date.now() });
+    const start = { alongM: liveSnap.alongM, ts: Date.now() };
+    setLegStart(start);
+    localStorage.setItem(LEG_START_KEY, JSON.stringify(start));
     setNow(Date.now());
   };
-  const resetLeg = () => setLegStart(null);
+  const resetLeg = () => {
+    setLegStart(null);
+    localStorage.removeItem(LEG_START_KEY);
+  };
 
   const refreshRoutes = useCallback(async () => {
     try {

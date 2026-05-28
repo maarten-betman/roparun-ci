@@ -210,15 +210,17 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
         },
       });
 
-      // Photo markers — revealed by the time filter as the replay scrubs
-      // past each photo's capture moment. Click opens the lightbox.
+      // Photo/video markers — always visible so you can see where media
+      // exists; the ones whose capture time the scrubber hasn't reached
+      // yet are dimmed (see the paint effect below). Click opens the
+      // lightbox.
       map.addSource("photos", { type: "geojson", data: emptyFC() });
       map.addLayer({
         id: "photos-circle",
         type: "circle",
         source: "photos",
         paint: {
-          "circle-radius": 7,
+          "circle-radius": 8,
           "circle-color": PHOTO_COLOR,
           "circle-stroke-width": 2,
           "circle-stroke-color": "#ffffff",
@@ -301,11 +303,31 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
     });
   }, [photos, mapReady]);
 
-  // Reveal photo markers as the replay scrubs past their capture time.
+  // Highlight media whose capture time the scrubber has passed; keep the
+  // upcoming ones visible but dimmed + smaller so you always see where
+  // media exists on the route.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !map.getLayer("photos-circle")) return;
-    map.setFilter("photos-circle", ["<=", ["get", "ts"], t] as maplibregl.FilterSpecification);
+    const revealed = ["<=", ["get", "ts"], t];
+    map.setPaintProperty("photos-circle", "circle-opacity", [
+      "case",
+      revealed,
+      0.95,
+      0.3,
+    ] as unknown as maplibregl.ExpressionSpecification);
+    map.setPaintProperty("photos-circle", "circle-stroke-opacity", [
+      "case",
+      revealed,
+      1,
+      0.3,
+    ] as unknown as maplibregl.ExpressionSpecification);
+    map.setPaintProperty("photos-circle", "circle-radius", [
+      "case",
+      revealed,
+      8,
+      5,
+    ] as unknown as maplibregl.ExpressionSpecification);
   }, [t, mapReady, photos]);
 
   // Update marker + covered line as the replay time advances.

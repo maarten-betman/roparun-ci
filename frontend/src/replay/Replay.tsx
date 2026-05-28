@@ -20,6 +20,10 @@ const CHECKPOINT_COLOR = "#dc2626";
 // Playback multipliers (real seconds × N). The race spans ~49 h, so
 // 1000× ≈ 3 min, 200× ≈ 15 min, 5000× ≈ 35 s.
 const SPEEDS = [200, 1000, 5000];
+// Left gutter (px) reserved for the speed graph's y-axis labels. The
+// time slider gets the same left padding so its track lines up with the
+// graph's plot area.
+const GRAPH_GUTTER = 48;
 
 interface ReplayProps {
   apiKey: string | undefined;
@@ -325,6 +329,7 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
           display: "flex",
           flexDirection: "column",
           gap: 8,
+          fontFamily: "var(--font-ui)",
         }}
       >
         <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
@@ -386,23 +391,27 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
           </div>
         </div>
 
-        <input
-          type="range"
-          min={startMs}
-          max={endMs || 1}
-          value={t}
-          disabled={!track}
-          onChange={(e) => {
-            setPlaying(false);
-            setT(Number(e.target.value));
-          }}
-          style={{ width: "100%" }}
-        />
+        <div style={{ paddingLeft: GRAPH_GUTTER, paddingRight: 4 }}>
+          <input
+            type="range"
+            min={startMs}
+            max={endMs || 1}
+            value={t}
+            disabled={!track}
+            onChange={(e) => {
+              setPlaying(false);
+              setT(Number(e.target.value));
+            }}
+            style={{ width: "100%", display: "block" }}
+          />
+        </div>
 
         {speedSeries && (
           <SpeedGraph
             series={speedSeries}
             cursorX={endMs > startMs ? (t - startMs) / (endMs - startMs) : 0}
+            startMs={startMs}
+            endMs={endMs}
             onSeek={(frac) => {
               setPlaying(false);
               setT(startMs + frac * (endMs - startMs));
@@ -422,23 +431,29 @@ interface SpeedSeries {
 
 /** Lightweight inline SVG speed chart: average (navy) + actual/segment
  *  (orange) speed across the timeline, with a cursor at the current
- *  replay position. Click/drag to seek. No chart library. */
+ *  replay position. Click to seek. Y axis = km/u (left gutter), X axis =
+ *  race time (below). No chart library. */
 function SpeedGraph({
   series,
   cursorX,
+  startMs,
+  endMs,
   onSeek,
 }: {
   series: SpeedSeries;
   cursorX: number;
+  startMs: number;
+  endMs: number;
   onSeek: (frac: number) => void;
 }) {
   const W = 1000;
-  const H = 90;
+  const H = 96;
+  const PAD_T = 6;
   const PAD_B = 4;
   const maxKmh = Math.ceil((series.maxV * 3.6) / 2) * 2 || 2;
   const maxV = maxKmh / 3.6;
   const toX = (x: number) => x * W;
-  const toY = (v: number) => H - PAD_B - (v / maxV) * (H - PAD_B - 4);
+  const toY = (v: number) => H - PAD_B - (v / maxV) * (H - PAD_B - PAD_T);
   const path = (pts: { x: number; v: number }[]) =>
     pts.map((p, i) => `${i === 0 ? "M" : "L"}${toX(p.x).toFixed(1)},${toY(p.v).toFixed(1)}`).join(" ");
 
@@ -447,51 +462,124 @@ function SpeedGraph({
     onSeek(Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width)));
   };
 
+  const yTicks = [0, maxKmh / 2, maxKmh];
+  const xTicks = [0, 0.25, 0.5, 0.75, 1];
+  const fmtTick = (frac: number) =>
+    new Date(startMs + frac * (endMs - startMs)).toLocaleString("nl-NL", {
+      weekday: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+  const labelStyle = {
+    fontFamily: "var(--font-ui)",
+    fontSize: 10,
+    color: "#6b7280",
+  } as const;
+
   return (
-    <div style={{ position: "relative" }}>
-      <svg
-        viewBox={`0 0 ${W} ${H}`}
-        preserveAspectRatio="none"
-        style={{ width: "100%", height: 90, cursor: "pointer", display: "block" }}
-        onClick={seek}
-      >
-        {/* y gridlines at 0 / mid / max km/h */}
-        {[0, maxKmh / 2, maxKmh].map((kmh) => (
-          <line
-            key={kmh}
-            x1={0}
-            x2={W}
-            y1={toY(kmh / 3.6)}
-            y2={toY(kmh / 3.6)}
-            stroke="#f3f4f6"
-            strokeWidth={1}
-          />
+    <div style={{ fontFamily: "var(--font-ui)" }}>
+      <div style={{ display: "flex", alignItems: "stretch" }}>
+        {/* Y-axis labels in the gutter, aligned to the gridlines. */}
+        <div
+          style={{
+            width: GRAPH_GUTTER,
+            position: "relative",
+            flex: "none",
+            paddingRight: 4,
+          }}
+          aria-hidden
+        >
+          {yTicks.map((kmh) => (
+            <span
+              key={kmh}
+              style={{
+                ...labelStyle,
+                position: "absolute",
+                right: 4,
+                top: `${(toY(kmh / 3.6) / H) * 100}%`,
+                transform: "translateY(-50%)",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {kmh}
+            </span>
+          ))}
+          <span
+            style={{
+              ...labelStyle,
+              position: "absolute",
+              left: 0,
+              top: "50%",
+              transform: "rotate(-90deg) translateX(50%)",
+              transformOrigin: "left center",
+              color: "#9ca3af",
+            }}
+          >
+            km/u
+          </span>
+        </div>
+
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          preserveAspectRatio="none"
+          style={{ width: "100%", height: H, cursor: "pointer", display: "block" }}
+          onClick={seek}
+        >
+          {yTicks.map((kmh) => (
+            <line
+              key={kmh}
+              x1={0}
+              x2={W}
+              y1={toY(kmh / 3.6)}
+              y2={toY(kmh / 3.6)}
+              stroke="#f3f4f6"
+              strokeWidth={1}
+            />
+          ))}
+          <path d={path(series.actual)} fill="none" stroke="#f97316" strokeWidth={1.5} />
+          <path d={path(series.avg)} fill="none" stroke="#0b3d91" strokeWidth={2} />
+          <line x1={toX(cursorX)} x2={toX(cursorX)} y1={0} y2={H} stroke="#111827" strokeWidth={1.5} />
+        </svg>
+      </div>
+
+      {/* X-axis time labels, aligned under the plot area (offset by gutter). */}
+      <div style={{ display: "flex", marginLeft: GRAPH_GUTTER, position: "relative", height: 14 }}>
+        {xTicks.map((frac) => (
+          <span
+            key={frac}
+            style={{
+              ...labelStyle,
+              position: "absolute",
+              left: `${frac * 100}%`,
+              transform:
+                frac === 0
+                  ? "translateX(0)"
+                  : frac === 1
+                    ? "translateX(-100%)"
+                    : "translateX(-50%)",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {fmtTick(frac)}
+          </span>
         ))}
-        <path d={path(series.actual)} fill="none" stroke="#f97316" strokeWidth={1.5} />
-        <path d={path(series.avg)} fill="none" stroke="#0b3d91" strokeWidth={2} />
-        <line
-          x1={toX(cursorX)}
-          x2={toX(cursorX)}
-          y1={0}
-          y2={H}
-          stroke="#111827"
-          strokeWidth={1.5}
-        />
-      </svg>
+      </div>
+
       <div
         style={{
           display: "flex",
           justifyContent: "space-between",
-          fontSize: 10,
-          color: "#9ca3af",
+          marginLeft: GRAPH_GUTTER,
           marginTop: 2,
+          ...labelStyle,
         }}
       >
         <span>
           <span style={{ color: "#0b3d91", fontWeight: 700 }}>━</span> gemiddeld{"  "}
           <span style={{ color: "#f97316", fontWeight: 700 }}>━</span> actueel
         </span>
-        <span>max {maxKmh} km/u</span>
+        <span style={{ color: "#9ca3af" }}>tijd →</span>
       </div>
     </div>
   );

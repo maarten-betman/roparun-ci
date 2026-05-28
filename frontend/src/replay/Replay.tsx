@@ -519,12 +519,36 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
                     background: "#f3f4f6",
                   }}
                 >
-                  <img
-                    src={mediaSrc(p.url)}
-                    alt={p.caption ?? ""}
-                    loading="lazy"
-                    style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                  />
+                  {p.kind === "video" ? (
+                    <div style={{ position: "relative", width: "100%", height: "100%" }}>
+                      <video
+                        src={`${mediaSrc(p.url)}#t=0.1`}
+                        preload="metadata"
+                        muted
+                        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", background: "#000" }}
+                      />
+                      <span
+                        style={{
+                          position: "absolute",
+                          inset: 0,
+                          display: "grid",
+                          placeItems: "center",
+                          color: "#fff",
+                          fontSize: 16,
+                          textShadow: "0 1px 3px rgba(0,0,0,0.7)",
+                        }}
+                      >
+                        ▶
+                      </span>
+                    </div>
+                  ) : (
+                    <img
+                      src={mediaSrc(p.url)}
+                      alt={p.caption ?? ""}
+                      loading="lazy"
+                      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                    />
+                  )}
                 </button>
               );
             })}
@@ -545,17 +569,35 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
             padding: 24,
           }}
         >
-          <figure style={{ margin: 0, maxWidth: "90vw", maxHeight: "90vh", textAlign: "center" }}>
-            <img
-              src={mediaSrc(lightbox.url)}
-              alt={lightbox.caption ?? ""}
-              style={{
-                maxWidth: "90vw",
-                maxHeight: "80vh",
-                objectFit: "contain",
-                borderRadius: 8,
-              }}
-            />
+          <figure
+            style={{ margin: 0, maxWidth: "90vw", maxHeight: "90vh", textAlign: "center" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {lightbox.kind === "video" ? (
+              <video
+                src={mediaSrc(lightbox.url)}
+                controls
+                autoPlay
+                playsInline
+                style={{ maxWidth: "90vw", maxHeight: "80vh", borderRadius: 8, background: "#000" }}
+              >
+                {/* Fallback for codecs the browser can't decode (e.g. HEVC). */}
+                <a href={mediaSrc(lightbox.url)} download style={{ color: "#fff" }}>
+                  Video downloaden
+                </a>
+              </video>
+            ) : (
+              <img
+                src={mediaSrc(lightbox.url)}
+                alt={lightbox.caption ?? ""}
+                style={{
+                  maxWidth: "90vw",
+                  maxHeight: "80vh",
+                  objectFit: "contain",
+                  borderRadius: 8,
+                }}
+              />
+            )}
             <figcaption
               style={{
                 color: "#fff",

@@ -38,6 +38,8 @@ class RaceTrackOut(BaseModel):
 
 class PhotoOut(BaseModel):
     id: str
+    kind: str
+    content_type: str | None
     caption: str | None
     taken_at: datetime | None
     width: int | None
@@ -160,6 +162,8 @@ async def public_photos(
         out.append(
             PhotoOut(
                 id=str(p.id),
+                kind=p.kind,
+                content_type=p.content_type,
                 caption=p.caption,
                 taken_at=p.taken_at,
                 width=p.width,

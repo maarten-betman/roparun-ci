@@ -15,9 +15,12 @@ class Settings(BaseSettings):
     # Shared secret gating /admin/* endpoints. Unset → admin disabled
     # (endpoints respond 503). Set via ROPARUN_ADMIN_TOKEN env var.
     admin_token: str | None = None
-    # Directory where uploaded race photos are stored + served from.
+    # Directory where uploaded race photos/videos are stored + served from.
     # Mount a persistent volume here in production (ROPARUN_MEDIA_DIR).
     media_dir: str = "data/media"
+    # Max single media upload, MB. Videos are stored without transcoding,
+    # so cap to keep the volume sane (ROPARUN_MAX_UPLOAD_MB).
+    max_upload_mb: int = 200
 
 
 @lru_cache

@@ -62,6 +62,7 @@ from ..schemas.admin import (
 from ..schemas.route import EventOut, RouteSummary, TeamOut, WaypointOut
 from ..security import require_admin
 from ..services.photos import process_upload
+from ..services.video import extract_video_meta
 
 
 def _xy(geom: Any) -> tuple[float, float]:
@@ -573,6 +574,8 @@ def _photo_out(p: RacePhoto) -> PhotoOut:
     lng, lat = _xy(p.geom)
     return PhotoOut(
         id=p.id,
+        kind=p.kind,
+        content_type=p.content_type,
         caption=p.caption,
         taken_at=p.taken_at,
         width=p.width,
@@ -583,6 +586,16 @@ def _photo_out(p: RacePhoto) -> PhotoOut:
     )
 
 
+# Allowed video extensions when storing as-is (no transcoding in v1).
+_VIDEO_EXT = {
+    "video/mp4": "mp4",
+    "video/quicktime": "mov",
+    "video/webm": "webm",
+    "video/x-matroska": "mkv",
+    "video/3gpp": "3gp",
+}
+
+
 @router.post("/photos", response_model=PhotoOut, status_code=status.HTTP_201_CREATED)
 async def upload_photo(
     event_id: uuid.UUID = Form(...),
@@ -590,31 +603,57 @@ async def upload_photo(
     file: UploadFile = File(...),
     session: AsyncSession = Depends(get_session),
 ) -> PhotoOut:
-    """Upload one photo. Reads EXIF GPS + capture time, downscales, and
-    writes the JPEG to the media dir. Rejected (422) when the image has
-    no EXIF GPS tag — v1 places photos by GPS only."""
+    """Upload one photo or video. Auto-places it from embedded GPS (EXIF
+    for photos, the QuickTime location atom for videos) and reveals it on
+    the replay at its capture time. Rejected (422) when the file carries
+    no GPS. Photos are downscaled to JPEG; videos are stored as-is."""
     if (await session.get(Event, event_id)) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "event not found")
+
     raw = await file.read()
-    try:
-        jpeg, w, h, lat, lng, taken = process_upload(raw)
-    except ValueError as exc:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    max_bytes = get_settings().max_upload_mb * 1024 * 1024
+    if len(raw) > max_bytes:
+        raise HTTPException(
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            f"'{file.filename}' is larger than {get_settings().max_upload_mb} MB.",
+        )
+
+    is_video = (file.content_type or "").startswith("video/")
+    width: int | None = None
+    height: int | None = None
+    content_type = file.content_type
+
+    if is_video:
+        lat, lng, taken = extract_video_meta(raw)
+        ext = _VIDEO_EXT.get(file.content_type or "", "mp4")
+        data = raw
+        kind = "video"
+    else:
+        try:
+            data, width, height, lat, lng, taken = process_upload(raw)
+        except ValueError as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+        ext = "jpg"
+        content_type = "image/jpeg"
+        kind = "photo"
+
     if lat is None or lng is None:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
-            f"'{file.filename}' has no GPS in its EXIF — can't place it on the map.",
+            f"'{file.filename}' has no GPS in its metadata — can't place it on the map.",
         )
 
-    fname = f"{uuid.uuid4().hex}.jpg"
-    (_media_dir() / fname).write_bytes(jpeg)
+    fname = f"{uuid.uuid4().hex}.{ext}"
+    (_media_dir() / fname).write_bytes(data)
     photo = RacePhoto(
         event_id=event_id,
+        kind=kind,
         filename=fname,
+        content_type=content_type,
         caption=caption,
         taken_at=taken,
-        width=w,
-        height=h,
+        width=width,
+        height=height,
         geom=WKTElement(ShpPoint(lng, lat).wkt, srid=4326),
     )
     session.add(photo)

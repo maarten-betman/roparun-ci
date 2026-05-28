@@ -132,6 +132,8 @@ class Stats(BaseModel):
 
 class PhotoOut(BaseModel):
     id: uuid.UUID
+    kind: str
+    content_type: str | None
     caption: str | None
     taken_at: datetime | None
     width: int | None

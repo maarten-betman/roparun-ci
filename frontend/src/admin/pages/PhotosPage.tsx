@@ -55,7 +55,7 @@ export function PhotosPage({ eventId }: { eventId: string | null }) {
   if (!eventId) {
     return (
       <div className="admin__page">
-        <h2>Foto's</h2>
+        <h2>Foto's &amp; video's</h2>
         <div className="admin__empty">Selecteer eerst een event bovenaan.</div>
       </div>
     );
@@ -66,19 +66,21 @@ export function PhotosPage({ eventId }: { eventId: string | null }) {
 
   return (
     <div className="admin__page">
-      <h2>Foto's</h2>
+      <h2>Foto's &amp; video's</h2>
       <div className="admin__actions" style={{ marginBottom: 16 }}>
         <h3>Uploaden</h3>
         <div className="admin__action-row">
           <span className="admin__action-row-meta">
-            Selecteer foto's met GPS-locatie in de EXIF. Ze verschijnen op de
-            replay-tijdlijn op het moment dat ze genomen zijn. Foto's zonder
-            GPS worden overgeslagen.
+            Selecteer foto's of video's met GPS-locatie in de metadata. Ze
+            verschijnen op de replay-tijdlijn op het moment dat ze gemaakt
+            zijn. Bestanden zonder GPS worden overgeslagen. Video's worden
+            niet omgezet — bestanden die de browser niet kan afspelen, krijgen
+            een downloadlink.
           </span>
           <input
             ref={inputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,video/*"
             multiple
             disabled={busy}
             onChange={(e) => onFiles(e.target.files)}
@@ -102,7 +104,7 @@ export function PhotosPage({ eventId }: { eventId: string | null }) {
       {loading ? (
         <div className="admin__empty">Laden…</div>
       ) : photos.length === 0 ? (
-        <div className="admin__empty">Nog geen foto's voor dit event.</div>
+        <div className="admin__empty">Nog geen foto's of video's voor dit event.</div>
       ) : (
         <div
           style={{
@@ -121,13 +123,25 @@ export function PhotosPage({ eventId }: { eventId: string | null }) {
                 background: "#fff",
               }}
             >
-              <img
-                src={photoSrc(p.url)}
-                alt={p.caption ?? ""}
-                style={{ width: "100%", height: 120, objectFit: "cover", display: "block" }}
-                loading="lazy"
-              />
+              {p.kind === "video" ? (
+                <video
+                  src={photoSrc(p.url)}
+                  controls
+                  preload="metadata"
+                  style={{ width: "100%", height: 120, objectFit: "cover", display: "block", background: "#000" }}
+                />
+              ) : (
+                <img
+                  src={photoSrc(p.url)}
+                  alt={p.caption ?? ""}
+                  style={{ width: "100%", height: 120, objectFit: "cover", display: "block" }}
+                  loading="lazy"
+                />
+              )}
               <div style={{ padding: 8, fontSize: 11, color: "#6b7280" }}>
+                <div style={{ fontWeight: 600, color: "#374151" }}>
+                  {p.kind === "video" ? "🎬 video" : "📷 foto"}
+                </div>
                 <div>
                   {p.taken_at
                     ? new Date(p.taken_at).toLocaleString("nl-NL", {

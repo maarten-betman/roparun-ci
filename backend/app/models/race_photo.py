@@ -26,11 +26,18 @@ class RacePhoto(UUIDPk, Base):
     event_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("event.id", ondelete="CASCADE"), nullable=False
     )
+    # "photo" or "video". Photos are downscaled JPEGs; videos are stored
+    # as uploaded (no transcoding in v1).
+    kind: Mapped[str] = mapped_column(String(8), nullable=False, default="photo")
     # Stored file name within the media dir (uuid + extension). The original
     # client filename is not trusted for the path.
     filename: Mapped[str] = mapped_column(String(128), nullable=False)
+    # MIME type, so the frontend knows how to render (img vs video) and the
+    # browser gets the right type when the file is served.
+    content_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
     caption: Mapped[str | None] = mapped_column(String(300), nullable=True)
-    # EXIF capture time (used to reveal the photo as the replay scrubs past).
+    # Capture time (EXIF for photos, mvhd creation_time for videos) — used to
+    # reveal the item as the replay scrubs past.
     taken_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     width: Mapped[int | None] = mapped_column(Integer, nullable=True)
     height: Mapped[int | None] = mapped_column(Integer, nullable=True)

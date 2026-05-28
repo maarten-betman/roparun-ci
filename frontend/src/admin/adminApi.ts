@@ -305,6 +305,7 @@ export const adminApi = {
 export interface PhotoAdmin {
   id: UUID;
   kind: "photo" | "video";
+  status: "ready" | "processing" | "failed";
   content_type: string | null;
   caption: string | null;
   taken_at: string | null;

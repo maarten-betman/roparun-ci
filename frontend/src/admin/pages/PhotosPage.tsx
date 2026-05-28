@@ -141,6 +141,12 @@ export function PhotosPage({ eventId }: { eventId: string | null }) {
               <div style={{ padding: 8, fontSize: 11, color: "#6b7280" }}>
                 <div style={{ fontWeight: 600, color: "#374151" }}>
                   {p.kind === "video" ? "🎬 video" : "📷 foto"}
+                  {p.status === "processing" && (
+                    <span style={{ color: "#b45309" }}> · verwerken…</span>
+                  )}
+                  {p.status === "failed" && (
+                    <span style={{ color: "#b91c1c" }}> · omzetten mislukt</span>
+                  )}
                 </div>
                 <div>
                   {p.taken_at

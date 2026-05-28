@@ -26,9 +26,12 @@ class RacePhoto(UUIDPk, Base):
     event_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("event.id", ondelete="CASCADE"), nullable=False
     )
-    # "photo" or "video". Photos are downscaled JPEGs; videos are stored
-    # as uploaded (no transcoding in v1).
+    # "photo" or "video". Photos are downscaled JPEGs; videos are
+    # transcoded to H.264 MP4 in the background after upload.
     kind: Mapped[str] = mapped_column(String(8), nullable=False, default="photo")
+    # "ready" | "processing" | "failed". Photos are ready immediately;
+    # videos start "processing" until the ffmpeg transcode finishes.
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="ready")
     # Stored file name within the media dir (uuid + extension). The original
     # client filename is not trusted for the path.
     filename: Mapped[str] = mapped_column(String(128), nullable=False)

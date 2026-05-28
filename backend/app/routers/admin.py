@@ -12,13 +12,24 @@ GPX upload). Audit log, multi-user roles, magic-link auth — all later.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
 from geoalchemy2 import WKTElement
 from geoalchemy2.shape import to_shape
 from shapely.geometry import Point as ShpPoint  # type: ignore[import-untyped]
@@ -26,7 +37,7 @@ from sqlalchemy import CursorResult, and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import get_settings
-from ..db import get_session
+from ..db import SessionLocal, get_session
 from ..models import (
     ChangeEvent,
     Device,
@@ -62,7 +73,7 @@ from ..schemas.admin import (
 from ..schemas.route import EventOut, RouteSummary, TeamOut, WaypointOut
 from ..security import require_admin
 from ..services.photos import process_upload
-from ..services.video import extract_video_meta
+from ..services.video import extract_video_meta, transcode_to_mp4
 
 
 def _xy(geom: Any) -> tuple[float, float]:
@@ -575,6 +586,7 @@ def _photo_out(p: RacePhoto) -> PhotoOut:
     return PhotoOut(
         id=p.id,
         kind=p.kind,
+        status=p.status,
         content_type=p.content_type,
         caption=p.caption,
         taken_at=p.taken_at,
@@ -598,6 +610,7 @@ _VIDEO_EXT = {
 
 @router.post("/photos", response_model=PhotoOut, status_code=status.HTTP_201_CREATED)
 async def upload_photo(
+    background: BackgroundTasks,
     event_id: uuid.UUID = Form(...),
     caption: str | None = Form(default=None),
     file: UploadFile = File(...),
@@ -606,7 +619,9 @@ async def upload_photo(
     """Upload one photo or video. Auto-places it from embedded GPS (EXIF
     for photos, the QuickTime location atom for videos) and reveals it on
     the replay at its capture time. Rejected (422) when the file carries
-    no GPS. Photos are downscaled to JPEG; videos are stored as-is."""
+    no GPS. Photos are downscaled to JPEG; videos are stored as-is and
+    transcoded to H.264 MP4 in the background (status "processing" until
+    done)."""
     if (await session.get(Event, event_id)) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "event not found")
 
@@ -645,6 +660,9 @@ async def upload_photo(
 
     fname = f"{uuid.uuid4().hex}.{ext}"
     (_media_dir() / fname).write_bytes(data)
+    # Videos start "processing"; a background task transcodes to MP4. An
+    # already-MP4 upload still goes through ffmpeg to normalise the codec
+    # (the container being .mp4 doesn't guarantee H.264).
     photo = RacePhoto(
         event_id=event_id,
         kind=kind,
@@ -654,12 +672,42 @@ async def upload_photo(
         taken_at=taken,
         width=width,
         height=height,
+        status="processing" if is_video else "ready",
         geom=WKTElement(ShpPoint(lng, lat).wkt, srid=4326),
     )
     session.add(photo)
     await session.commit()
     await session.refresh(photo)
+    if is_video:
+        background.add_task(_transcode_photo, photo.id, fname)
     return _photo_out(photo)
+
+
+async def _transcode_photo(photo_id: uuid.UUID, src_name: str) -> None:
+    """Background: transcode an uploaded video to H.264 MP4, then point the
+    row at the new file and flip status to "ready". On failure the row is
+    marked "failed" but the original file is kept so it stays downloadable
+    (and playable on Safari)."""
+    media = _media_dir()
+    src = media / src_name
+    dst_name = f"{src.stem}_h264.mp4"
+    dst = media / dst_name
+    ok = await asyncio.to_thread(transcode_to_mp4, src, dst)
+    async with SessionLocal() as session:
+        photo = await session.get(RacePhoto, photo_id)
+        if photo is None:
+            dst.unlink(missing_ok=True)
+            return
+        if ok:
+            photo.filename = dst_name
+            photo.content_type = "video/mp4"
+            photo.status = "ready"
+            await session.commit()
+            src.unlink(missing_ok=True)  # drop the original once transcoded
+        else:
+            photo.status = "failed"
+            await session.commit()
+            dst.unlink(missing_ok=True)
 
 
 @router.get("/photos", response_model=list[PhotoOut])

@@ -78,6 +78,7 @@ export function mediaSrc(url: string): string {
 export interface RacePhoto {
   id: string;
   kind: "photo" | "video";
+  status: "ready" | "processing" | "failed";
   content_type: string | null;
   caption: string | null;
   taken_at: string | null;

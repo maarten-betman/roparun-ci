@@ -736,7 +736,25 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
                 onClick={(e) => e.stopPropagation()}
               >
                 {item.kind === "video" ? (
-                  videoErr ? (
+                  item.status === "processing" ? (
+                    <div
+                      style={{
+                        width: "min(90vw, 520px)",
+                        padding: 32,
+                        borderRadius: 8,
+                        background: "#111827",
+                        color: "#fff",
+                        fontFamily: "var(--font-ui)",
+                        fontSize: 14,
+                        lineHeight: 1.5,
+                        textAlign: "center",
+                      }}
+                    >
+                      <div style={{ fontSize: 32, marginBottom: 8 }}>⏳</div>
+                      Deze video wordt nog omgezet naar een afspeelbaar
+                      formaat. Probeer het over een momentje opnieuw.
+                    </div>
+                  ) : videoErr ? (
                     <div
                       style={{
                         width: "min(90vw, 520px)",

@@ -20,8 +20,10 @@ from __future__ import annotations
 
 import re
 import struct
+import subprocess
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 # QuickTime/MP4 epoch is 1904-01-01 UTC.
 _QT_EPOCH = datetime(1904, 1, 1, tzinfo=UTC)
@@ -97,3 +99,42 @@ def extract_video_meta(raw: bytes) -> tuple[float | None, float | None, datetime
     """Return (lat, lng, taken_at) parsed from an MP4/MOV container."""
     lat, lng = _scan_location(raw)
     return lat, lng, _creation_time(raw)
+
+
+def transcode_to_mp4(src: Path, dst: Path) -> bool:
+    """Transcode any input to a broadly-playable H.264/AAC MP4 (faststart
+    so it streams without a full download). Scales down to 1080p tall max,
+    keeps aspect. Returns True on success. Blocking — run off the event
+    loop (e.g. via a BackgroundTask threadpool)."""
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(src),
+        "-vf",
+        "scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "26",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "128k",
+        "-movflags",
+        "+faststart",
+        str(dst),
+    ]
+    try:
+        proc = subprocess.run(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=900,  # 15 min ceiling per clip
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return proc.returncode == 0 and dst.exists() and dst.stat().st_size > 0

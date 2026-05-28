@@ -61,4 +61,29 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+
+  // Race replay: official recorded track for a team+year.
+  getRaceTrack: (publicPath: string) => j<RaceTrack>(`/public/${publicPath}/race-track`),
+
+  publicRoutePath: (publicPath: string) => `/public/${publicPath}`,
+  getPublicRoute: (publicPath: string) => j<RouteDetail>(`/public/${publicPath}`),
 };
+
+export interface RacePoint {
+  seq: number;
+  name: string;
+  note: string | null;
+  kind: number;
+  position_m: number;
+  planned_at: string | null;
+  passed_at: string;
+  speed_total_mps: number | null;
+  speed_actual_mps: number | null;
+  lng: number;
+  lat: number;
+}
+
+export interface RaceTrack {
+  source: string;
+  points: RacePoint[];
+}

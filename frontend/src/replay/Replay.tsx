@@ -1,6 +1,6 @@
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { api, mediaSrc, type RacePhoto, type RaceTrack } from "../api/client";
 import type { RouteDetail } from "../api/types";
 import { TopBar } from "../chrome/TopBar";
@@ -59,6 +59,16 @@ function groupPhotos(photos: RacePhoto[]): PhotoGroup[] {
   return [...by.values()];
 }
 
+const lightboxBtn: CSSProperties = {
+  display: "inline-block",
+  padding: "8px 16px",
+  borderRadius: 6,
+  background: "#374151",
+  color: "#fff",
+  textDecoration: "none",
+  fontSize: 13,
+};
+
 function emptyFC(): GeoJSON.FeatureCollection {
   return { type: "FeatureCollection", features: [] };
 }
@@ -87,6 +97,10 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
   const [error, setError] = useState<string | null>(null);
   // Lightbox shows one group of co-located media; `index` pages within it.
   const [lightbox, setLightbox] = useState<{ items: RacePhoto[]; index: number } | null>(null);
+  // Set when the current lightbox video fails to decode (e.g. HEVC in
+  // Chrome/Firefox); reset whenever the lightbox state changes.
+  const [videoErr, setVideoErr] = useState(false);
+  useEffect(() => setVideoErr(false), [lightbox]);
 
   const [t, setT] = useState(0); // current replay time (epoch ms)
   const [playing, setPlaying] = useState(false);
@@ -722,19 +736,48 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
                 onClick={(e) => e.stopPropagation()}
               >
                 {item.kind === "video" ? (
-                  <video
-                    key={item.id}
-                    src={mediaSrc(item.url)}
-                    controls
-                    autoPlay
-                    playsInline
-                    style={{ maxWidth: "90vw", maxHeight: "78vh", borderRadius: 8, background: "#000" }}
-                  >
-                    {/* Fallback for codecs the browser can't decode (e.g. HEVC). */}
-                    <a href={mediaSrc(item.url)} download style={{ color: "#fff" }}>
-                      Video downloaden
-                    </a>
-                  </video>
+                  videoErr ? (
+                    <div
+                      style={{
+                        width: "min(90vw, 520px)",
+                        padding: 32,
+                        borderRadius: 8,
+                        background: "#111827",
+                        color: "#fff",
+                        fontFamily: "var(--font-ui)",
+                        fontSize: 14,
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      <div style={{ fontSize: 32, marginBottom: 8 }}>🎬</div>
+                      Deze video kan niet in je browser worden afgespeeld
+                      (waarschijnlijk een iPhone HEVC-opname). Safari op
+                      Mac/iPhone speelt hem wel af.
+                      <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 16 }}>
+                        <a
+                          href={mediaSrc(item.url)}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ ...lightboxBtn, background: "#0b3d91" }}
+                        >
+                          Openen
+                        </a>
+                        <a href={mediaSrc(item.url)} download style={lightboxBtn}>
+                          Downloaden
+                        </a>
+                      </div>
+                    </div>
+                  ) : (
+                    <video
+                      key={item.id}
+                      src={mediaSrc(item.url)}
+                      controls
+                      autoPlay
+                      playsInline
+                      onError={() => setVideoErr(true)}
+                      style={{ maxWidth: "90vw", maxHeight: "78vh", borderRadius: 8, background: "#000" }}
+                    />
+                  )
                 ) : (
                   <img
                     src={mediaSrc(item.url)}

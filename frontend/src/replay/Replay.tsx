@@ -210,32 +210,74 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
         },
       });
 
-      // Photo/video markers — always visible so you can see where media
-      // exists; the ones whose capture time the scrubber hasn't reached
-      // yet are dimmed (see the paint effect below). Click opens the
-      // lightbox.
+      // Photo/video markers — a white chip with a pink ring + a camera /
+      // film emoji, so they're unmistakable next to the small red
+      // checkpoint dots. Always visible; ones whose capture time the
+      // scrubber hasn't reached yet are dimmed (see the paint effect).
+      // Rasterise the emoji to map images (the SDF font server returns
+      // tofu for colour emoji in text-field).
+      const emojiPx = 40;
+      const ecanvas = document.createElement("canvas");
+      ecanvas.width = emojiPx;
+      ecanvas.height = emojiPx;
+      const ectx = ecanvas.getContext("2d");
+      if (ectx) {
+        ectx.textAlign = "center";
+        ectx.textBaseline = "middle";
+        ectx.font = `${Math.floor(emojiPx * 0.72)}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`;
+        for (const [id, glyph] of [
+          ["media-photo", "📷"],
+          ["media-video", "🎬"],
+        ] as const) {
+          if (map.hasImage(id)) continue;
+          ectx.clearRect(0, 0, emojiPx, emojiPx);
+          ectx.fillText(glyph, emojiPx / 2, emojiPx / 2);
+          map.addImage(id, ectx.getImageData(0, 0, emojiPx, emojiPx), { pixelRatio: 2 });
+        }
+      }
       map.addSource("photos", { type: "geojson", data: emptyFC() });
       map.addLayer({
         id: "photos-circle",
         type: "circle",
         source: "photos",
         paint: {
-          "circle-radius": 8,
-          "circle-color": PHOTO_COLOR,
-          "circle-stroke-width": 2,
-          "circle-stroke-color": "#ffffff",
+          "circle-radius": 13,
+          "circle-color": "#ffffff",
+          "circle-stroke-width": 3,
+          "circle-stroke-color": PHOTO_COLOR,
         },
       });
-      map.on("click", "photos-circle", (e) => {
+      map.addLayer({
+        id: "photos-icon",
+        type: "symbol",
+        source: "photos",
+        layout: {
+          "icon-image": [
+            "match",
+            ["get", "kind"],
+            "video",
+            "media-video",
+            "media-photo",
+          ] as unknown as maplibregl.ExpressionSpecification,
+          "icon-size": 0.5,
+          "icon-allow-overlap": true,
+        },
+      });
+      const openLightbox = (e: maplibregl.MapLayerMouseEvent) => {
         const id = e.features?.[0]?.properties?.id as string | undefined;
         if (id) setLightbox((cur) => photosRef.current.find((p) => p.id === id) ?? cur);
-      });
-      map.on("mouseenter", "photos-circle", () => {
+      };
+      const cursorOn = () => {
         map.getCanvas().style.cursor = "pointer";
-      });
-      map.on("mouseleave", "photos-circle", () => {
+      };
+      const cursorOff = () => {
         map.getCanvas().style.cursor = "";
-      });
+      };
+      for (const layer of ["photos-circle", "photos-icon"]) {
+        map.on("click", layer, openLightbox);
+        map.on("mouseenter", layer, cursorOn);
+        map.on("mouseleave", layer, cursorOff);
+      }
 
       const el = document.createElement("div");
       Object.assign(el.style, {
@@ -295,7 +337,8 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
         type: "Feature",
         properties: {
           id: p.id,
-          // Photos with no EXIF time get 0 so they're always visible.
+          kind: p.kind,
+          // Media with no capture time get 0 so they're always "revealed".
           ts: p.taken_at ? new Date(p.taken_at).getTime() : 0,
         },
         geometry: { type: "Point", coordinates: [p.lng, p.lat] },
@@ -310,24 +353,12 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
     const map = mapRef.current;
     if (!map || !mapReady || !map.getLayer("photos-circle")) return;
     const revealed = ["<=", ["get", "ts"], t];
-    map.setPaintProperty("photos-circle", "circle-opacity", [
-      "case",
-      revealed,
-      0.95,
-      0.3,
-    ] as unknown as maplibregl.ExpressionSpecification);
-    map.setPaintProperty("photos-circle", "circle-stroke-opacity", [
-      "case",
-      revealed,
-      1,
-      0.3,
-    ] as unknown as maplibregl.ExpressionSpecification);
-    map.setPaintProperty("photos-circle", "circle-radius", [
-      "case",
-      revealed,
-      8,
-      5,
-    ] as unknown as maplibregl.ExpressionSpecification);
+    const caseExpr = (a: number, b: number) =>
+      ["case", revealed, a, b] as unknown as maplibregl.ExpressionSpecification;
+    map.setPaintProperty("photos-circle", "circle-opacity", caseExpr(1, 0.3));
+    map.setPaintProperty("photos-circle", "circle-stroke-opacity", caseExpr(1, 0.3));
+    map.setPaintProperty("photos-circle", "circle-radius", caseExpr(13, 9));
+    map.setPaintProperty("photos-icon", "icon-opacity", caseExpr(1, 0.35));
   }, [t, mapReady, photos]);
 
   // Update marker + covered line as the replay time advances.

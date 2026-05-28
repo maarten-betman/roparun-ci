@@ -1,7 +1,7 @@
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, type RaceTrack } from "../api/client";
+import { api, mediaSrc, type RacePhoto, type RaceTrack } from "../api/client";
 import type { RouteDetail } from "../api/types";
 import { TopBar } from "../chrome/TopBar";
 import { DEFAULT_CENTER, DEFAULT_ZOOM, mapStyle } from "../map/style";
@@ -17,6 +17,7 @@ const ROUTE_COLOR = "#d1d5db";
 const COVERED_COLOR = "#eab308";
 const MARKER_COLOR = "#0b3d91";
 const CHECKPOINT_COLOR = "#dc2626";
+const PHOTO_COLOR = "#db2777";
 // Playback multipliers (real seconds × N). The race spans ~49 h, so
 // 1000× ≈ 3 min, 200× ≈ 15 min, 5000× ≈ 35 s.
 const SPEEDS = [200, 1000, 5000];
@@ -47,17 +48,22 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markerRef = useRef<maplibregl.Marker | null>(null);
+  // Mirrors `photos` so the (once-bound) map click handler reads the
+  // current list instead of a stale closure.
+  const photosRef = useRef<RacePhoto[]>([]);
   const [mapReady, setMapReady] = useState(false);
 
   const [track, setTrack] = useState<RaceTrack | null>(null);
   const [route, setRoute] = useState<RouteDetail | null>(null);
+  const [photos, setPhotos] = useState<RacePhoto[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [lightbox, setLightbox] = useState<RacePhoto | null>(null);
 
   const [t, setT] = useState(0); // current replay time (epoch ms)
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1000);
 
-  // Fetch the recorded track + the published route geometry.
+  // Fetch the recorded track + the published route geometry + photos.
   useEffect(() => {
     api
       .getRaceTrack(publicPath)
@@ -67,6 +73,10 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
       .getPublicRoute(publicPath)
       .then(setRoute)
       .catch(() => void 0);
+    api
+      .getRacePhotos(publicPath)
+      .then(setPhotos)
+      .catch(() => setPhotos([]));
   }, [publicPath]);
 
   const startMs = track ? new Date(track.points[0].passed_at).getTime() : 0;
@@ -200,6 +210,31 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
         },
       });
 
+      // Photo markers — revealed by the time filter as the replay scrubs
+      // past each photo's capture moment. Click opens the lightbox.
+      map.addSource("photos", { type: "geojson", data: emptyFC() });
+      map.addLayer({
+        id: "photos-circle",
+        type: "circle",
+        source: "photos",
+        paint: {
+          "circle-radius": 7,
+          "circle-color": PHOTO_COLOR,
+          "circle-stroke-width": 2,
+          "circle-stroke-color": "#ffffff",
+        },
+      });
+      map.on("click", "photos-circle", (e) => {
+        const id = e.features?.[0]?.properties?.id as string | undefined;
+        if (id) setLightbox((cur) => photosRef.current.find((p) => p.id === id) ?? cur);
+      });
+      map.on("mouseenter", "photos-circle", () => {
+        map.getCanvas().style.cursor = "pointer";
+      });
+      map.on("mouseleave", "photos-circle", () => {
+        map.getCanvas().style.cursor = "";
+      });
+
       const el = document.createElement("div");
       Object.assign(el.style, {
         width: "18px",
@@ -245,6 +280,33 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
     for (const c of runners.track) bounds.extend(c);
     if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 40, duration: 400 });
   }, [mapReady, runners, track]);
+
+  // Push photos into the map source (with a numeric capture-time prop for
+  // the reveal filter) whenever the list changes.
+  useEffect(() => {
+    photosRef.current = photos;
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    (map.getSource("photos") as maplibregl.GeoJSONSource | undefined)?.setData({
+      type: "FeatureCollection",
+      features: photos.map((p) => ({
+        type: "Feature",
+        properties: {
+          id: p.id,
+          // Photos with no EXIF time get 0 so they're always visible.
+          ts: p.taken_at ? new Date(p.taken_at).getTime() : 0,
+        },
+        geometry: { type: "Point", coordinates: [p.lng, p.lat] },
+      })),
+    });
+  }, [photos, mapReady]);
+
+  // Reveal photo markers as the replay scrubs past their capture time.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !map.getLayer("photos-circle")) return;
+    map.setFilter("photos-circle", ["<=", ["get", "ts"], t] as maplibregl.FilterSpecification);
+  }, [t, mapReady, photos]);
 
   // Update marker + covered line as the replay time advances.
   useEffect(() => {
@@ -418,7 +480,105 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
             }}
           />
         )}
+
+        {photos.length > 0 && (
+          <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingTop: 2 }}>
+            {photos.map((p) => {
+              const ts = p.taken_at ? new Date(p.taken_at).getTime() : 0;
+              const revealed = ts <= t;
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => {
+                    if (ts > 0) {
+                      setPlaying(false);
+                      setT(ts);
+                    }
+                    setLightbox(p);
+                  }}
+                  title={
+                    p.taken_at
+                      ? new Date(p.taken_at).toLocaleString("nl-NL", {
+                          weekday: "short",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
+                      : (p.caption ?? "foto")
+                  }
+                  style={{
+                    flex: "none",
+                    width: 56,
+                    height: 42,
+                    padding: 0,
+                    border: revealed ? `2px solid ${PHOTO_COLOR}` : "2px solid #e5e7eb",
+                    borderRadius: 4,
+                    overflow: "hidden",
+                    cursor: "pointer",
+                    opacity: revealed ? 1 : 0.4,
+                    background: "#f3f4f6",
+                  }}
+                >
+                  <img
+                    src={mediaSrc(p.url)}
+                    alt={p.caption ?? ""}
+                    loading="lazy"
+                    style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                  />
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
+
+      {lightbox && (
+        <div
+          onClick={() => setLightbox(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.8)",
+            display: "grid",
+            placeItems: "center",
+            zIndex: 10,
+            padding: 24,
+          }}
+        >
+          <figure style={{ margin: 0, maxWidth: "90vw", maxHeight: "90vh", textAlign: "center" }}>
+            <img
+              src={mediaSrc(lightbox.url)}
+              alt={lightbox.caption ?? ""}
+              style={{
+                maxWidth: "90vw",
+                maxHeight: "80vh",
+                objectFit: "contain",
+                borderRadius: 8,
+              }}
+            />
+            <figcaption
+              style={{
+                color: "#fff",
+                fontFamily: "var(--font-ui)",
+                fontSize: 13,
+                marginTop: 8,
+              }}
+            >
+              {lightbox.caption}
+              {lightbox.taken_at && (
+                <span style={{ color: "#9ca3af" }}>
+                  {lightbox.caption ? " · " : ""}
+                  {new Date(lightbox.taken_at).toLocaleString("nl-NL", {
+                    weekday: "short",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
+              )}
+            </figcaption>
+          </figure>
+        </div>
+      )}
     </div>
   );
 }

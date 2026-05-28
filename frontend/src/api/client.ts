@@ -64,10 +64,27 @@ export const api = {
 
   // Race replay: official recorded track for a team+year.
   getRaceTrack: (publicPath: string) => j<RaceTrack>(`/public/${publicPath}/race-track`),
+  getRacePhotos: (publicPath: string) => j<RacePhoto[]>(`/public/${publicPath}/photos`),
 
   publicRoutePath: (publicPath: string) => `/public/${publicPath}`,
   getPublicRoute: (publicPath: string) => j<RouteDetail>(`/public/${publicPath}`),
 };
+
+/** Resolve a photo's relative `url` ("media/abc.jpg") to a fetchable URL. */
+export function mediaSrc(url: string): string {
+  return `${BASE}/${url}`;
+}
+
+export interface RacePhoto {
+  id: string;
+  caption: string | null;
+  taken_at: string | null;
+  width: number | null;
+  height: number | null;
+  lng: number;
+  lat: number;
+  url: string;
+}
 
 export interface RacePoint {
   seq: number;

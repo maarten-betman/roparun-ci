@@ -14,6 +14,7 @@ import { ChangeEventsPage } from "./pages/ChangeEventsPage";
 import { Dashboard } from "./pages/Dashboard";
 import { DevicesPage } from "./pages/DevicesPage";
 import { EventsPage } from "./pages/EventsPage";
+import { PhotosPage } from "./pages/PhotosPage";
 import { PositionsPage } from "./pages/PositionsPage";
 import { RoutesPage } from "./pages/RoutesPage";
 import { TeamsPage } from "./pages/TeamsPage";
@@ -26,6 +27,7 @@ type PageKey =
   | "devices"
   | "positions"
   | "changes"
+  | "photos"
   | "teams"
   | "events";
 
@@ -36,6 +38,7 @@ const TABS: { key: PageKey; label: string; path: string }[] = [
   { key: "devices", label: "Devices", path: "/admin/devices" },
   { key: "positions", label: "Posities", path: "/admin/positions" },
   { key: "changes", label: "Wissels", path: "/admin/changes" },
+  { key: "photos", label: "Foto's", path: "/admin/photos" },
   { key: "teams", label: "Teams", path: "/admin/teams" },
   { key: "events", label: "Events", path: "/admin/events" },
 ];
@@ -216,6 +219,7 @@ export function Admin() {
         {page === "devices" && <DevicesPage eventId={eventId} />}
         {page === "positions" && <PositionsPage eventId={eventId} />}
         {page === "changes" && <ChangeEventsPage eventId={eventId} />}
+        {page === "photos" && <PhotosPage eventId={eventId} />}
         {page === "teams" && <TeamsPage />}
         {page === "events" && <EventsPage />}
       </main>

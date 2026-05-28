@@ -275,4 +275,46 @@ export const adminApi = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+
+  // Photos.
+  listPhotos: (event_id: UUID) => j<PhotoAdmin[]>(`/admin/photos?event_id=${event_id}`),
+  deletePhoto: (id: UUID) => j<void>(`/admin/photos/${id}`, { method: "DELETE" }),
+  // Multipart upload — bypasses j() (no JSON content-type). Resolves with
+  // the created photo, or rejects with the backend's error text (e.g. the
+  // "no GPS in EXIF" 422) so the caller can show which file failed.
+  async uploadPhoto(event_id: UUID, file: File, caption?: string): Promise<PhotoAdmin> {
+    const form = new FormData();
+    form.append("event_id", event_id);
+    form.append("file", file);
+    if (caption) form.append("caption", caption);
+    const token = getStoredToken();
+    const res = await fetch(`${BASE}/admin/photos`, {
+      method: "POST",
+      headers: token ? { "x-admin-token": token } : {},
+      body: form,
+    });
+    if (res.status === 401) {
+      clearToken();
+      throw new UnauthorizedError();
+    }
+    if (!res.ok) throw new Error(await res.text());
+    return (await res.json()) as PhotoAdmin;
+  },
 };
+
+export interface PhotoAdmin {
+  id: UUID;
+  caption: string | null;
+  taken_at: string | null;
+  width: number | null;
+  height: number | null;
+  lng: number;
+  lat: number;
+  url: string;
+}
+
+/** Resolve a photo's `url` (returned relative, e.g. "media/abc.jpg") to a
+ *  fetchable URL under the API base. */
+export function photoSrc(url: string): string {
+  return `${BASE}/${url}`;
+}

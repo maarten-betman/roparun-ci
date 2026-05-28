@@ -86,7 +86,7 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
   }, [route]);
 
   // Interpolate the team's state at time `t`: position along the route,
-  // and a current speed (linear between the bracketing recorded points).
+  // and several speed measures.
   const state = useMemo(() => {
     if (!track || track.points.length === 0) return null;
     const pts = track.points;
@@ -99,12 +99,49 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
     const t1 = new Date(p1.passed_at).getTime();
     const f = t1 > t0 ? (clamped - t0) / (t1 - t0) : 0;
     const positionM = p0.position_m + (p1.position_m - p0.position_m) * f;
-    // Reported "actual" speed, interpolated; fall back to total.
-    const s0 = p0.speed_actual_mps ?? p0.speed_total_mps ?? 0;
-    const s1 = p1.speed_actual_mps ?? p1.speed_total_mps ?? 0;
-    const speedMps = s0 + (s1 - s0) * f;
-    return { positionM, speedMps, lastPassed: p0, nextPassed: p1 };
+    // Current speed derived from the two closest recorded GPS fixes:
+    // distance covered between them ÷ elapsed. More faithful to "how fast
+    // were they actually going right here" than the reported field.
+    const segSeconds = (t1 - t0) / 1000;
+    const segmentMps = segSeconds > 0 ? (p1.position_m - p0.position_m) / segSeconds : null;
+    // Overall average from the start to the current replayed moment.
+    const elapsedSeconds = (clamped - startMs) / 1000;
+    const avgMps = elapsedSeconds > 0 ? positionM / elapsedSeconds : null;
+    return { positionM, segmentMps, avgMps, lastPassed: p0, nextPassed: p1 };
   }, [track, t, startMs, endMs]);
+
+  // Pre-computed speed series for the graph: at each recorded point, the
+  // cumulative average (from start) and the segment speed (to the next
+  // fix). x is the fraction across the whole timeline.
+  const speedSeries = useMemo(() => {
+    if (!track || track.points.length < 2 || endMs <= startMs) return null;
+    const pts = track.points;
+    const avg: { x: number; v: number }[] = [];
+    const actual: { x: number; v: number }[] = [];
+    let maxV = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const ti = new Date(pts[i].passed_at).getTime();
+      const x = (ti - startMs) / (endMs - startMs);
+      const elapsed = (ti - startMs) / 1000;
+      if (elapsed > 0) {
+        const v = pts[i].position_m / elapsed;
+        avg.push({ x, v });
+        maxV = Math.max(maxV, v);
+      }
+      if (i < pts.length - 1) {
+        const tn = new Date(pts[i + 1].passed_at).getTime();
+        const segS = (tn - ti) / 1000;
+        if (segS > 0) {
+          const v = (pts[i + 1].position_m - pts[i].position_m) / segS;
+          // Plot the segment speed as a step held until the next fix.
+          actual.push({ x, v });
+          actual.push({ x: (tn - startMs) / (endMs - startMs), v });
+          maxV = Math.max(maxV, v);
+        }
+      }
+    }
+    return { avg, actual, maxV: maxV || 1 };
+  }, [track, startMs, endMs]);
 
   // On-route coordinate for the current position. The recorded position
   // is along the official 547.6 km route; map it proportionally onto the
@@ -255,7 +292,7 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
       <TopBar
         title="Roparun · Race replay"
         meta={publicPath.split("/")[1] ?? "2026"}
-        currentPage="viewer"
+        currentPage="replay"
       />
       <div style={{ position: "relative", flex: 1 }}>
         <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />
@@ -338,8 +375,12 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
               value={state ? `${(state.positionM / 1000).toFixed(1)} km` : "–"}
             />
             <Stat
-              label="Snelheid"
-              value={state ? `${(state.speedMps * 3.6).toFixed(1)} km/u` : "–"}
+              label="Huidige snelheid"
+              value={state?.segmentMps != null ? `${(state.segmentMps * 3.6).toFixed(1)} km/u` : "–"}
+            />
+            <Stat
+              label="Gem. snelheid"
+              value={state?.avgMps != null ? `${(state.avgMps * 3.6).toFixed(1)} km/u` : "–"}
             />
             <Stat label="Bij" value={state ? state.lastPassed.name : "–"} />
           </div>
@@ -357,6 +398,100 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
           }}
           style={{ width: "100%" }}
         />
+
+        {speedSeries && (
+          <SpeedGraph
+            series={speedSeries}
+            cursorX={endMs > startMs ? (t - startMs) / (endMs - startMs) : 0}
+            onSeek={(frac) => {
+              setPlaying(false);
+              setT(startMs + frac * (endMs - startMs));
+            }}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface SpeedSeries {
+  avg: { x: number; v: number }[];
+  actual: { x: number; v: number }[];
+  maxV: number;
+}
+
+/** Lightweight inline SVG speed chart: average (navy) + actual/segment
+ *  (orange) speed across the timeline, with a cursor at the current
+ *  replay position. Click/drag to seek. No chart library. */
+function SpeedGraph({
+  series,
+  cursorX,
+  onSeek,
+}: {
+  series: SpeedSeries;
+  cursorX: number;
+  onSeek: (frac: number) => void;
+}) {
+  const W = 1000;
+  const H = 90;
+  const PAD_B = 4;
+  const maxKmh = Math.ceil((series.maxV * 3.6) / 2) * 2 || 2;
+  const maxV = maxKmh / 3.6;
+  const toX = (x: number) => x * W;
+  const toY = (v: number) => H - PAD_B - (v / maxV) * (H - PAD_B - 4);
+  const path = (pts: { x: number; v: number }[]) =>
+    pts.map((p, i) => `${i === 0 ? "M" : "L"}${toX(p.x).toFixed(1)},${toY(p.v).toFixed(1)}`).join(" ");
+
+  const seek = (e: React.MouseEvent<SVGSVGElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    onSeek(Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width)));
+  };
+
+  return (
+    <div style={{ position: "relative" }}>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        preserveAspectRatio="none"
+        style={{ width: "100%", height: 90, cursor: "pointer", display: "block" }}
+        onClick={seek}
+      >
+        {/* y gridlines at 0 / mid / max km/h */}
+        {[0, maxKmh / 2, maxKmh].map((kmh) => (
+          <line
+            key={kmh}
+            x1={0}
+            x2={W}
+            y1={toY(kmh / 3.6)}
+            y2={toY(kmh / 3.6)}
+            stroke="#f3f4f6"
+            strokeWidth={1}
+          />
+        ))}
+        <path d={path(series.actual)} fill="none" stroke="#f97316" strokeWidth={1.5} />
+        <path d={path(series.avg)} fill="none" stroke="#0b3d91" strokeWidth={2} />
+        <line
+          x1={toX(cursorX)}
+          x2={toX(cursorX)}
+          y1={0}
+          y2={H}
+          stroke="#111827"
+          strokeWidth={1.5}
+        />
+      </svg>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          fontSize: 10,
+          color: "#9ca3af",
+          marginTop: 2,
+        }}
+      >
+        <span>
+          <span style={{ color: "#0b3d91", fontWeight: 700 }}>━</span> gemiddeld{"  "}
+          <span style={{ color: "#f97316", fontWeight: 700 }}>━</span> actueel
+        </span>
+        <span>max {maxKmh} km/u</span>
       </div>
     </div>
   );

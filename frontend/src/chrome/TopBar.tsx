@@ -11,10 +11,10 @@ export interface TopBarProps {
   /** Optional actions rendered on the right (buttons). */
   actions?: React.ReactNode;
   /** Current page key — drives the highlighted item in the nav row. */
-  currentPage?: "viewer" | "planner" | "tracker" | "hulp";
+  currentPage?: "viewer" | "planner" | "tracker" | "hulp" | "replay";
 }
 
-type NavKey = "viewer" | "planner" | "tracker" | "hulp";
+type NavKey = "viewer" | "planner" | "tracker" | "hulp" | "replay";
 
 const NavIcon = ({ icon }: { icon: NavKey }) => {
   // Heroicons-style 20×20 outline; kept inline so the drawer stays
@@ -68,6 +68,15 @@ const NavIcon = ({ icon }: { icon: NavKey }) => {
           <circle cx="12" cy="17" r="0.6" fill="currentColor" stroke="none" />
         </svg>
       );
+    case "replay":
+      // Play triangle with a circular arrow (replay).
+      return (
+        <svg {...common}>
+          <path d="M3.5 12a8.5 8.5 0 1 1 2.5 6" />
+          <path d="M3.5 21v-4h4" />
+          <path d="M10.5 9.5l5 2.5-5 2.5Z" />
+        </svg>
+      );
   }
 };
 
@@ -79,6 +88,7 @@ const NAV_ITEMS: {
 }[] = [
   { key: "viewer", label: "Viewer", subtitle: "Publieke kaart", href: "/" },
   { key: "planner", label: "Planner", subtitle: "Route bewerken", href: "/planner" },
+  { key: "replay", label: "Replay", subtitle: "Race terugkijken", href: "/replay" },
   { key: "tracker", label: "Tracker", subtitle: "Live positie sturen", href: "/tracker.html" },
   { key: "hulp", label: "Hulp", subtitle: "Handleiding", href: "/hulp" },
 ];

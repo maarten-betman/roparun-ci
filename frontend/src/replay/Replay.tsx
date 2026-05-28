@@ -380,7 +380,7 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
       mapRef.current = null;
       setMapReady(false);
     };
-  }, [apiKey]);
+  }, [apiKey, gate]);
 
   // Draw the route line + checkpoints once both map and data are ready.
   useEffect(() => {

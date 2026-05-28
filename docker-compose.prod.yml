@@ -48,6 +48,9 @@ services:
       # Where uploaded race photos are written + served from. Backed by the
       # media_data volume below so they survive redeploys.
       ROPARUN_MEDIA_DIR: /app/media
+      # Optional password gating the /replay page + its data/media. Unset →
+      # replay stays open. Set to share the race replay with the team.
+      ROPARUN_REPLAY_PASSWORD: ${ROPARUN_REPLAY_PASSWORD:-}
     volumes:
       - media_data:/app/media
     depends_on:

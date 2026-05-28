@@ -1,20 +1,59 @@
 from __future__ import annotations
 
+import secrets
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..config import get_settings
 from ..db import get_session
 from ..models import Event, RacePhoto, RacePoint, Route, Team
 from ..models.route import RouteStatus
 from ..schemas.route import RouteDetail
+from ..security import REPLAY_COOKIE, replay_authed, require_replay
 from ..services.geo import to_point
 from ..services.routes import load_route_detail
 
 router = APIRouter(prefix="/public", tags=["public"])
+
+
+class ReplayLogin(BaseModel):
+    password: str
+
+
+@router.get("/replay-status")
+async def replay_status(request: Request) -> dict[str, bool]:
+    """Tells the replay page whether a password is required and whether the
+    caller is already authed (valid cookie)."""
+    return {
+        "required": bool(get_settings().replay_password),
+        "authed": replay_authed(request),
+    }
+
+
+@router.post("/replay-login")
+async def replay_login(body: ReplayLogin, response: Response) -> dict[str, bool]:
+    """Verify the shared replay password and set an HttpOnly cookie that
+    same-origin requests (including <img>/<video>) carry automatically."""
+    settings = get_settings()
+    pw = settings.replay_password
+    if not pw:
+        return {"ok": True, "required": False}
+    if not secrets.compare_digest(body.password, pw):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "wrong password")
+    response.set_cookie(
+        REPLAY_COOKIE,
+        pw,
+        max_age=60 * 60 * 24 * 30,
+        httponly=True,
+        samesite="lax",
+        secure=settings.env == "prod",
+        path="/",
+    )
+    return {"ok": True, "required": True}
 
 
 class RacePointOut(BaseModel):
@@ -74,7 +113,11 @@ async def public_route(
     return await load_route_detail(session, route)
 
 
-@router.get("/{team_slug}/{year}/race-track", response_model=RaceTrackOut)
+@router.get(
+    "/{team_slug}/{year}/race-track",
+    response_model=RaceTrackOut,
+    dependencies=[Depends(require_replay)],
+)
 async def public_race_track(
     team_slug: str,
     year: int,
@@ -135,7 +178,11 @@ async def public_race_track(
     return RaceTrackOut(source=primary, points=out)
 
 
-@router.get("/{team_slug}/{year}/photos", response_model=list[PhotoOut])
+@router.get(
+    "/{team_slug}/{year}/photos",
+    response_model=list[PhotoOut],
+    dependencies=[Depends(require_replay)],
+)
 async def public_photos(
     team_slug: str,
     year: int,

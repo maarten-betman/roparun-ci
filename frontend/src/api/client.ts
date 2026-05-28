@@ -66,6 +66,14 @@ export const api = {
   getRaceTrack: (publicPath: string) => j<RaceTrack>(`/public/${publicPath}/race-track`),
   getRacePhotos: (publicPath: string) => j<RacePhoto[]>(`/public/${publicPath}/photos`),
 
+  // Replay password gate.
+  replayStatus: () => j<{ required: boolean; authed: boolean }>("/public/replay-status"),
+  replayLogin: (password: string) =>
+    j<{ ok: boolean }>("/public/replay-login", {
+      method: "POST",
+      body: JSON.stringify({ password }),
+    }),
+
   publicRoutePath: (publicPath: string) => `/public/${publicPath}`,
   getPublicRoute: (publicPath: string) => j<RouteDetail>(`/public/${publicPath}`),
 };

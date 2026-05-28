@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     # Max single media upload, MB. Videos are stored without transcoding,
     # so cap to keep the volume sane (ROPARUN_MAX_UPLOAD_MB).
     max_upload_mb: int = 200
+    # Optional password gating the /replay page + its data/media. Unset →
+    # replay is open (current behaviour). Set via ROPARUN_REPLAY_PASSWORD.
+    replay_password: str | None = None
 
 
 @lru_cache

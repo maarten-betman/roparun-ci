@@ -4,7 +4,6 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
 from .routers import (
@@ -15,6 +14,7 @@ from .routers import (
     health,
     ingest,
     live,
+    media,
     public,
     routes,
     teams,
@@ -46,13 +46,13 @@ def create_app() -> FastAPI:
     app.include_router(live.router)
     app.include_router(change_events.router)
     app.include_router(admin.router)
+    app.include_router(media.router)
 
-    # Serve uploaded race photos. Created if missing so StaticFiles can
-    # mount on a fresh deploy before the first upload. In production this
-    # path is a persistent volume (ROPARUN_MEDIA_DIR).
-    media_dir = Path(settings.media_dir)
-    media_dir.mkdir(parents=True, exist_ok=True)
-    app.mount("/media", StaticFiles(directory=media_dir), name="media")
+    # Ensure the media dir exists on a fresh deploy (before first upload).
+    # In production this path is a persistent volume (ROPARUN_MEDIA_DIR).
+    # Files are served by the gated media router above, not StaticFiles, so
+    # the replay password (when set) covers them too.
+    Path(settings.media_dir).mkdir(parents=True, exist_ok=True)
     return app
 
 

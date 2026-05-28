@@ -317,7 +317,10 @@ export interface PhotoAdmin {
 }
 
 /** Resolve a photo's `url` (returned relative, e.g. "media/abc.jpg") to a
- *  fetchable URL under the API base. */
+ *  fetchable URL under the API base. Appends the admin token as `?k=` so
+ *  `<img>`/`<video>` tags load even when the replay password gates /media
+ *  (those tags can't send the admin header). */
 export function photoSrc(url: string): string {
-  return `${BASE}/${url}`;
+  const token = getStoredToken();
+  return token ? `${BASE}/${url}?k=${encodeURIComponent(token)}` : `${BASE}/${url}`;
 }

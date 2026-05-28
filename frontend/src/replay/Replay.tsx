@@ -106,8 +106,20 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1000);
 
-  // Fetch the recorded track + the published route geometry + photos.
+  // Password gate: "checking" until replay-status resolves, "locked" when
+  // a password is required and we're not authed, "open" otherwise.
+  const [gate, setGate] = useState<"checking" | "locked" | "open">("checking");
   useEffect(() => {
+    api
+      .replayStatus()
+      .then((s) => setGate(s.required && !s.authed ? "locked" : "open"))
+      .catch(() => setGate("open")); // status endpoint is open; failure → don't lock out
+  }, []);
+
+  // Fetch the recorded track + the published route geometry + photos once
+  // the gate is open.
+  useEffect(() => {
+    if (gate !== "open") return;
     api
       .getRaceTrack(publicPath)
       .then(setTrack)
@@ -120,7 +132,7 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
       .getRacePhotos(publicPath)
       .then(setPhotos)
       .catch(() => setPhotos([]));
-  }, [publicPath]);
+  }, [publicPath, gate]);
 
   const startMs = track ? new Date(track.points[0].passed_at).getTime() : 0;
   const endMs = track
@@ -474,6 +486,25 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
       hour: "2-digit",
       minute: "2-digit",
     });
+
+  if (gate !== "open") {
+    return (
+      <div style={{ position: "fixed", inset: 0, display: "flex", flexDirection: "column" }}>
+        <TopBar
+          title="Roparun · Race replay"
+          meta={publicPath.split("/")[1] ?? "2026"}
+          currentPage="replay"
+        />
+        <div style={{ flex: 1, display: "grid", placeItems: "center", padding: 24 }}>
+          {gate === "checking" ? (
+            <div style={{ color: "#6b7280", fontFamily: "var(--font-ui)" }}>Laden…</div>
+          ) : (
+            <ReplayPasswordGate onUnlock={() => setGate("open")} />
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ position: "fixed", inset: 0, display: "flex", flexDirection: "column" }}>
@@ -999,5 +1030,82 @@ function Stat({ label, value }: { label: string; value: string }) {
       <span style={{ fontSize: 10, textTransform: "uppercase", color: "#9ca3af" }}>{label}</span>
       <span style={{ fontWeight: 600, color: "#111827" }}>{value}</span>
     </div>
+  );
+}
+
+function ReplayPasswordGate({ onUnlock }: { onUnlock: () => void }) {
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!password) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.replayLogin(password);
+      onUnlock();
+    } catch {
+      setError("Onjuist wachtwoord.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form
+      onSubmit={submit}
+      style={{
+        background: "#fff",
+        border: "1px solid #e5e7eb",
+        borderRadius: 10,
+        padding: 24,
+        width: "min(360px, 92vw)",
+        display: "flex",
+        flexDirection: "column",
+        gap: 12,
+        fontFamily: "var(--font-ui)",
+        boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
+      }}
+    >
+      <div style={{ fontSize: 28, textAlign: "center" }}>🔒</div>
+      <h2 style={{ margin: 0, fontSize: 16, textAlign: "center", color: "#0b3d91" }}>
+        Replay is beveiligd
+      </h2>
+      <p style={{ margin: 0, fontSize: 13, color: "#6b7280", textAlign: "center" }}>
+        Vul het wachtwoord in om de race terug te kijken.
+      </p>
+      <input
+        type="password"
+        autoFocus
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        placeholder="Wachtwoord"
+        aria-label="Replay wachtwoord"
+        style={{
+          padding: "8px 10px",
+          border: "1px solid #d1d5db",
+          borderRadius: 6,
+          fontSize: 14,
+        }}
+      />
+      {error && <div style={{ color: "#b91c1c", fontSize: 13 }}>{error}</div>}
+      <button
+        type="submit"
+        disabled={busy}
+        style={{
+          padding: "9px 12px",
+          background: "#0b3d91",
+          color: "#fff",
+          border: 0,
+          borderRadius: 6,
+          fontSize: 14,
+          cursor: busy ? "wait" : "pointer",
+        }}
+      >
+        {busy ? "Controleren…" : "Bekijk replay"}
+      </button>
+    </form>
   );
 }

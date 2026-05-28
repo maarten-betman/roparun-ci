@@ -27,6 +27,9 @@ seed:
 load-roparun-2026:
 	docker compose exec api python -m app.scripts.load_roparun_2026
 
+load-race-track:
+	docker compose exec api python -m app.scripts.load_race_track $${file:-team372.xml}
+
 simulate:
 	@test -n "$(gpx)" && test -n "$(token)" \
 		|| (echo "usage: make simulate gpx=<path.gpx> token=<bearer> [speed=60]" && exit 1)

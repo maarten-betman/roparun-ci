@@ -17,7 +17,7 @@ const ROUTE_COLOR = "#d1d5db";
 const COVERED_COLOR = "#eab308";
 const MARKER_COLOR = "#0b3d91";
 const CHECKPOINT_COLOR = "#dc2626";
-const PHOTO_COLOR = "#db2777";
+const PHOTO_COLOR = "#7c3aed"; // violet — distinct from the red checkpoint dots
 // Playback multipliers (real seconds × N). The race spans ~49 h, so
 // 1000× ≈ 3 min, 200× ≈ 15 min, 5000× ≈ 35 s.
 const SPEEDS = [200, 1000, 5000];
@@ -29,6 +29,34 @@ const GRAPH_GUTTER = 48;
 interface ReplayProps {
   apiKey: string | undefined;
   publicPath: string;
+}
+
+interface PhotoGroup {
+  key: string;
+  lng: number;
+  lat: number;
+  items: RacePhoto[];
+  /** Earliest capture time in the group (0 if none) — drives the reveal. */
+  minTs: number;
+}
+
+/** Group media taken at (nearly) the same spot so stacked markers don't
+ *  hide each other. Keyed on coordinates rounded to ~4 decimals (≈11 m).
+ *  Items keep their input order (capture-time ascending from the API). */
+function groupPhotos(photos: RacePhoto[]): PhotoGroup[] {
+  const by = new Map<string, PhotoGroup>();
+  for (const p of photos) {
+    const key = `${p.lng.toFixed(4)},${p.lat.toFixed(4)}`;
+    const ts = p.taken_at ? new Date(p.taken_at).getTime() : 0;
+    const g = by.get(key);
+    if (g) {
+      g.items.push(p);
+      g.minTs = Math.min(g.minTs, ts);
+    } else {
+      by.set(key, { key, lng: p.lng, lat: p.lat, items: [p], minTs: ts });
+    }
+  }
+  return [...by.values()];
 }
 
 function emptyFC(): GeoJSON.FeatureCollection {
@@ -48,16 +76,17 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markerRef = useRef<maplibregl.Marker | null>(null);
-  // Mirrors `photos` so the (once-bound) map click handler reads the
-  // current list instead of a stale closure.
-  const photosRef = useRef<RacePhoto[]>([]);
+  // Co-located media grouped by rounded coordinate, mirrored to a ref so
+  // the (once-bound) map click handler reads the current grouping.
+  const groupsRef = useRef<PhotoGroup[]>([]);
   const [mapReady, setMapReady] = useState(false);
 
   const [track, setTrack] = useState<RaceTrack | null>(null);
   const [route, setRoute] = useState<RouteDetail | null>(null);
   const [photos, setPhotos] = useState<RacePhoto[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [lightbox, setLightbox] = useState<RacePhoto | null>(null);
+  // Lightbox shows one group of co-located media; `index` pages within it.
+  const [lightbox, setLightbox] = useState<{ items: RacePhoto[]; index: number } | null>(null);
 
   const [t, setT] = useState(0); // current replay time (epoch ms)
   const [playing, setPlaying] = useState(false);
@@ -167,6 +196,8 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
     return { coord: pointAtDistance(runners.track, runners.cum, distM), distM };
   }, [state, runners, maxPositionM]);
 
+  const photoGroups = useMemo(() => groupPhotos(photos), [photos]);
+
   // Mount the map once.
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -263,9 +294,31 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
           "icon-allow-overlap": true,
         },
       });
+      // Count badge for groups of >1 co-located media, top-right of the chip.
+      map.addLayer({
+        id: "photos-count",
+        type: "symbol",
+        source: "photos",
+        filter: [">", ["get", "count"], 1],
+        layout: {
+          "text-field": ["to-string", ["get", "count"]],
+          "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
+          "text-size": 11,
+          "text-offset": [1.1, -1.1],
+          "text-allow-overlap": true,
+          "text-ignore-placement": true,
+        },
+        paint: {
+          "text-color": "#ffffff",
+          "text-halo-color": PHOTO_COLOR,
+          "text-halo-width": 2.5,
+        },
+      });
       const openLightbox = (e: maplibregl.MapLayerMouseEvent) => {
-        const id = e.features?.[0]?.properties?.id as string | undefined;
-        if (id) setLightbox((cur) => photosRef.current.find((p) => p.id === id) ?? cur);
+        const key = e.features?.[0]?.properties?.key as string | undefined;
+        if (!key) return;
+        const group = groupsRef.current.find((g) => g.key === key);
+        if (group) setLightbox({ items: group.items, index: 0 });
       };
       const cursorOn = () => {
         map.getCanvas().style.cursor = "pointer";
@@ -273,7 +326,7 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
       const cursorOff = () => {
         map.getCanvas().style.cursor = "";
       };
-      for (const layer of ["photos-circle", "photos-icon"]) {
+      for (const layer of ["photos-circle", "photos-icon", "photos-count"]) {
         map.on("click", layer, openLightbox);
         map.on("mouseenter", layer, cursorOn);
         map.on("mouseleave", layer, cursorOff);
@@ -325,26 +378,27 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
     if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 40, duration: 400 });
   }, [mapReady, runners, track]);
 
-  // Push photos into the map source (with a numeric capture-time prop for
-  // the reveal filter) whenever the list changes.
+  // Push one feature per co-located group into the map source (with the
+  // group's earliest capture time + count) whenever the grouping changes.
   useEffect(() => {
-    photosRef.current = photos;
+    groupsRef.current = photoGroups;
     const map = mapRef.current;
     if (!map || !mapReady) return;
     (map.getSource("photos") as maplibregl.GeoJSONSource | undefined)?.setData({
       type: "FeatureCollection",
-      features: photos.map((p) => ({
+      features: photoGroups.map((g) => ({
         type: "Feature",
         properties: {
-          id: p.id,
-          kind: p.kind,
-          // Media with no capture time get 0 so they're always "revealed".
-          ts: p.taken_at ? new Date(p.taken_at).getTime() : 0,
+          key: g.key,
+          // Icon reflects the first item; mixed groups still read as media.
+          kind: g.items[0].kind,
+          count: g.items.length,
+          ts: g.minTs, // groups with an undated item get 0 → always revealed
         },
-        geometry: { type: "Point", coordinates: [p.lng, p.lat] },
+        geometry: { type: "Point", coordinates: [g.lng, g.lat] },
       })),
     });
-  }, [photos, mapReady]);
+  }, [photoGroups, mapReady]);
 
   // Highlight media whose capture time the scrubber has passed; keep the
   // upcoming ones visible but dimmed + smaller so you always see where
@@ -359,7 +413,8 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
     map.setPaintProperty("photos-circle", "circle-stroke-opacity", caseExpr(1, 0.3));
     map.setPaintProperty("photos-circle", "circle-radius", caseExpr(13, 9));
     map.setPaintProperty("photos-icon", "icon-opacity", caseExpr(1, 0.35));
-  }, [t, mapReady, photos]);
+    map.setPaintProperty("photos-count", "text-opacity", caseExpr(1, 0.4));
+  }, [t, mapReady, photoGroups]);
 
   // Update marker + covered line as the replay time advances.
   useEffect(() => {
@@ -548,7 +603,10 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
                       setPlaying(false);
                       setT(ts);
                     }
-                    setLightbox(p);
+                    // Open the whole co-located group, positioned on this item.
+                    const group = photoGroups.find((g) => g.items.some((x) => x.id === p.id));
+                    const items = group?.items ?? [p];
+                    setLightbox({ items, index: Math.max(0, items.findIndex((x) => x.id === p.id)) });
                   }}
                   title={
                     p.taken_at
@@ -609,71 +667,105 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
         )}
       </div>
 
-      {lightbox && (
-        <div
-          onClick={() => setLightbox(null)}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.8)",
-            display: "grid",
-            placeItems: "center",
-            zIndex: 10,
-            padding: 24,
-          }}
-        >
-          <figure
-            style={{ margin: 0, maxWidth: "90vw", maxHeight: "90vh", textAlign: "center" }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {lightbox.kind === "video" ? (
-              <video
-                src={mediaSrc(lightbox.url)}
-                controls
-                autoPlay
-                playsInline
-                style={{ maxWidth: "90vw", maxHeight: "80vh", borderRadius: 8, background: "#000" }}
-              >
-                {/* Fallback for codecs the browser can't decode (e.g. HEVC). */}
-                <a href={mediaSrc(lightbox.url)} download style={{ color: "#fff" }}>
-                  Video downloaden
-                </a>
-              </video>
-            ) : (
-              <img
-                src={mediaSrc(lightbox.url)}
-                alt={lightbox.caption ?? ""}
-                style={{
-                  maxWidth: "90vw",
-                  maxHeight: "80vh",
-                  objectFit: "contain",
-                  borderRadius: 8,
-                }}
-              />
-            )}
-            <figcaption
+      {lightbox &&
+        (() => {
+          const item = lightbox.items[lightbox.index];
+          const many = lightbox.items.length > 1;
+          const step = (d: number) =>
+            setLightbox((lb) =>
+              lb
+                ? { ...lb, index: (lb.index + d + lb.items.length) % lb.items.length }
+                : lb,
+            );
+          const navBtn = (label: string, onClick: () => void) => (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onClick();
+              }}
               style={{
-                color: "#fff",
-                fontFamily: "var(--font-ui)",
-                fontSize: 13,
-                marginTop: 8,
+                position: "absolute",
+                top: "50%",
+                transform: "translateY(-50%)",
+                [label === "‹" ? "left" : "right"]: 12,
+                width: 44,
+                height: 44,
+                borderRadius: "50%",
+                border: 0,
+                background: "rgba(255,255,255,0.85)",
+                color: "#111827",
+                fontSize: 22,
+                cursor: "pointer",
               }}
             >
-              {lightbox.caption}
-              {lightbox.taken_at && (
-                <span style={{ color: "#9ca3af" }}>
-                  {lightbox.caption ? " · " : ""}
-                  {new Date(lightbox.taken_at).toLocaleString("nl-NL", {
-                    weekday: "short",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </span>
-              )}
-            </figcaption>
-          </figure>
-        </div>
-      )}
+              {label}
+            </button>
+          );
+          return (
+            <div
+              onClick={() => setLightbox(null)}
+              style={{
+                position: "fixed",
+                inset: 0,
+                background: "rgba(0,0,0,0.8)",
+                display: "grid",
+                placeItems: "center",
+                zIndex: 10,
+                padding: 24,
+              }}
+            >
+              {many && navBtn("‹", () => step(-1))}
+              {many && navBtn("›", () => step(1))}
+              <figure
+                style={{ margin: 0, maxWidth: "90vw", maxHeight: "90vh", textAlign: "center" }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {item.kind === "video" ? (
+                  <video
+                    key={item.id}
+                    src={mediaSrc(item.url)}
+                    controls
+                    autoPlay
+                    playsInline
+                    style={{ maxWidth: "90vw", maxHeight: "78vh", borderRadius: 8, background: "#000" }}
+                  >
+                    {/* Fallback for codecs the browser can't decode (e.g. HEVC). */}
+                    <a href={mediaSrc(item.url)} download style={{ color: "#fff" }}>
+                      Video downloaden
+                    </a>
+                  </video>
+                ) : (
+                  <img
+                    src={mediaSrc(item.url)}
+                    alt={item.caption ?? ""}
+                    style={{ maxWidth: "90vw", maxHeight: "78vh", objectFit: "contain", borderRadius: 8 }}
+                  />
+                )}
+                <figcaption
+                  style={{ color: "#fff", fontFamily: "var(--font-ui)", fontSize: 13, marginTop: 8 }}
+                >
+                  {many && (
+                    <span style={{ color: "#9ca3af" }}>
+                      {lightbox.index + 1} / {lightbox.items.length} ·{" "}
+                    </span>
+                  )}
+                  {item.caption}
+                  {item.taken_at && (
+                    <span style={{ color: "#9ca3af" }}>
+                      {item.caption ? " · " : ""}
+                      {new Date(item.taken_at).toLocaleString("nl-NL", {
+                        weekday: "short",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                  )}
+                </figcaption>
+              </figure>
+            </div>
+          );
+        })()}
     </div>
   );
 }

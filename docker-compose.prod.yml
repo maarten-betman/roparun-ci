@@ -45,6 +45,11 @@ services:
       # and the /admin page shows an explanatory banner. Set this to a
       # long random string in Coolify to enable the console.
       ROPARUN_ADMIN_TOKEN: ${ROPARUN_ADMIN_TOKEN:-}
+      # Where uploaded race photos are written + served from. Backed by the
+      # media_data volume below so they survive redeploys.
+      ROPARUN_MEDIA_DIR: /app/media
+    volumes:
+      - media_data:/app/media
     depends_on:
       db:
         condition: service_healthy
@@ -90,3 +95,4 @@ services:
 
 volumes:
   db_data:
+  media_data:

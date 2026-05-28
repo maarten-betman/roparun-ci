@@ -156,9 +156,7 @@ async def _ensure_event(year: int) -> uuid.UUID:
             session.add(team)
             await session.flush()
         event = (
-            await session.execute(
-                select(Event).where(Event.team_id == team.id, Event.year == year)
-            )
+            await session.execute(select(Event).where(Event.team_id == team.id, Event.year == year))
         ).scalar_one_or_none()
         if event is None:
             event = Event(team_id=team.id, year=year, start_city="Clastres")
@@ -192,9 +190,7 @@ async def main() -> None:
     event_id = await _ensure_event(args.year)
     async with SessionLocal() as session:
         deleted = await session.execute(
-            delete(RacePoint).where(
-                RacePoint.event_id == event_id, RacePoint.source == source
-            )
+            delete(RacePoint).where(RacePoint.event_id == event_id, RacePoint.source == source)
         )
         if deleted.rowcount:  # type: ignore[attr-defined]
             print(f"Replaced {deleted.rowcount} existing '{source}' rows.")  # type: ignore[attr-defined]

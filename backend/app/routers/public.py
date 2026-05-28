@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_session
-from ..models import Event, RacePoint, Route, Team
+from ..models import Event, RacePhoto, RacePoint, Route, Team
 from ..models.route import RouteStatus
 from ..schemas.route import RouteDetail
 from ..services.geo import to_point
@@ -34,6 +34,17 @@ class RacePointOut(BaseModel):
 class RaceTrackOut(BaseModel):
     source: str
     points: list[RacePointOut]
+
+
+class PhotoOut(BaseModel):
+    id: str
+    caption: str | None
+    taken_at: datetime | None
+    width: int | None
+    height: int | None
+    lng: float
+    lat: float
+    url: str
 
 
 @router.get("/{team_slug}/{year}", response_model=RouteDetail)
@@ -119,3 +130,43 @@ async def public_race_track(
             )
         )
     return RaceTrackOut(source=primary, points=out)
+
+
+@router.get("/{team_slug}/{year}/photos", response_model=list[PhotoOut])
+async def public_photos(
+    team_slug: str,
+    year: int,
+    session: AsyncSession = Depends(get_session),
+) -> list[PhotoOut]:
+    """Geo-referenced race photos for the replay, ordered by capture time."""
+    event_id = (
+        await session.execute(
+            select(Event.id)
+            .join(Team, Event.team_id == Team.id)
+            .where(Team.slug == team_slug, Event.year == year)
+        )
+    ).scalar_one_or_none()
+    if event_id is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "team+year not found")
+    stmt = (
+        select(RacePhoto)
+        .where(RacePhoto.event_id == event_id)
+        .order_by(RacePhoto.taken_at.nulls_last(), RacePhoto.created_at)
+    )
+    out: list[PhotoOut] = []
+    for p in (await session.execute(stmt)).scalars():
+        pt = to_point(p.geom)
+        lng, lat = pt.coordinates
+        out.append(
+            PhotoOut(
+                id=str(p.id),
+                caption=p.caption,
+                taken_at=p.taken_at,
+                width=p.width,
+                height=p.height,
+                lng=lng,
+                lat=lat,
+                url=f"media/{p.filename}",
+            )
+        )
+    return out

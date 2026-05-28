@@ -128,3 +128,14 @@ class Stats(BaseModel):
     positions_24h: int
     change_events: int
     waypoints: int
+
+
+class PhotoOut(BaseModel):
+    id: uuid.UUID
+    caption: str | None
+    taken_at: datetime | None
+    width: int | None
+    height: int | None
+    lng: float
+    lat: float
+    url: str

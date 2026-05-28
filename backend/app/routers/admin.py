@@ -15,13 +15,17 @@ from __future__ import annotations
 import base64
 import uuid
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from geoalchemy2 import WKTElement
 from geoalchemy2.shape import to_shape
+from shapely.geometry import Point as ShpPoint  # type: ignore[import-untyped]
 from sqlalchemy import CursorResult, and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..config import get_settings
 from ..db import get_session
 from ..models import (
     ChangeEvent,
@@ -29,6 +33,7 @@ from ..models import (
     Event,
     PairingToken,
     Position,
+    RacePhoto,
     Route,
     Team,
     Waypoint,
@@ -45,6 +50,7 @@ from ..schemas.admin import (
     DeviceAdminOut,
     DevicePatch,
     EventPatch,
+    PhotoOut,
     PositionOut,
     PositionPage,
     RotateTokenOut,
@@ -55,6 +61,7 @@ from ..schemas.admin import (
 )
 from ..schemas.route import EventOut, RouteSummary, TeamOut, WaypointOut
 from ..security import require_admin
+from ..services.photos import process_upload
 
 
 def _xy(geom: Any) -> tuple[float, float]:
@@ -551,3 +558,89 @@ async def cleanup_pairing_tokens(
     result: CursorResult[Any] = await session.execute(stmt)  # type: ignore[assignment]
     await session.commit()
     return CleanupResult(deleted=result.rowcount or 0)
+
+
+# ---- Photos ----------------------------------------------------------------
+
+
+def _media_dir() -> Path:
+    d = Path(get_settings().media_dir)
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _photo_out(p: RacePhoto) -> PhotoOut:
+    lng, lat = _xy(p.geom)
+    return PhotoOut(
+        id=p.id,
+        caption=p.caption,
+        taken_at=p.taken_at,
+        width=p.width,
+        height=p.height,
+        lng=lng,
+        lat=lat,
+        url=f"media/{p.filename}",
+    )
+
+
+@router.post("/photos", response_model=PhotoOut, status_code=status.HTTP_201_CREATED)
+async def upload_photo(
+    event_id: uuid.UUID = Form(...),
+    caption: str | None = Form(default=None),
+    file: UploadFile = File(...),
+    session: AsyncSession = Depends(get_session),
+) -> PhotoOut:
+    """Upload one photo. Reads EXIF GPS + capture time, downscales, and
+    writes the JPEG to the media dir. Rejected (422) when the image has
+    no EXIF GPS tag — v1 places photos by GPS only."""
+    if (await session.get(Event, event_id)) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "event not found")
+    raw = await file.read()
+    try:
+        jpeg, w, h, lat, lng, taken = process_upload(raw)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    if lat is None or lng is None:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"'{file.filename}' has no GPS in its EXIF — can't place it on the map.",
+        )
+
+    fname = f"{uuid.uuid4().hex}.jpg"
+    (_media_dir() / fname).write_bytes(jpeg)
+    photo = RacePhoto(
+        event_id=event_id,
+        filename=fname,
+        caption=caption,
+        taken_at=taken,
+        width=w,
+        height=h,
+        geom=WKTElement(ShpPoint(lng, lat).wkt, srid=4326),
+    )
+    session.add(photo)
+    await session.commit()
+    await session.refresh(photo)
+    return _photo_out(photo)
+
+
+@router.get("/photos", response_model=list[PhotoOut])
+async def list_photos(
+    event_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+) -> list[PhotoOut]:
+    stmt = (
+        select(RacePhoto)
+        .where(RacePhoto.event_id == event_id)
+        .order_by(RacePhoto.taken_at.nulls_last(), RacePhoto.created_at)
+    )
+    return [_photo_out(p) for p in (await session.execute(stmt)).scalars()]
+
+
+@router.delete("/photos/{photo_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_photo(photo_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> None:
+    photo = await session.get(RacePhoto, photo_id)
+    if photo is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "photo not found")
+    (_media_dir() / photo.filename).unlink(missing_ok=True)
+    await session.delete(photo)
+    await session.commit()

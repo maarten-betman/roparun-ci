@@ -3,6 +3,7 @@ from .device import Device, DeviceRole
 from .event import Event
 from .pairing_token import PairingToken
 from .position import Position
+from .race_photo import RacePhoto
 from .race_point import RacePoint
 from .route import Route, RouteStatus
 from .stage import Stage
@@ -16,6 +17,7 @@ __all__ = [
     "Event",
     "PairingToken",
     "Position",
+    "RacePhoto",
     "RacePoint",
     "Route",
     "RouteStatus",

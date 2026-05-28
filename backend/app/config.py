@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     # Shared secret gating /admin/* endpoints. Unset → admin disabled
     # (endpoints respond 503). Set via ROPARUN_ADMIN_TOKEN env var.
     admin_token: str | None = None
+    # Directory where uploaded race photos are stored + served from.
+    # Mount a persistent volume here in production (ROPARUN_MEDIA_DIR).
+    media_dir: str = "data/media"
 
 
 @lru_cache

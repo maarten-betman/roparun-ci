@@ -45,6 +45,26 @@ def _configure_env(postgis_url: str) -> Iterator[None]:
 
     get_settings.cache_clear()
 
+    # app.db builds its engine at import time, which happens during pytest
+    # *collection* (test modules import app.* → app.models → app.db) — long
+    # before this fixture knows the testcontainer's mapped port. So the
+    # module engine points at the default localhost:5432. Rebind it (and
+    # the sessionmaker) to the container now. get_session() looks up
+    # SessionLocal on the module at call time, so DI-based endpoints pick
+    # this up.
+    from sqlalchemy.ext.asyncio import (
+        AsyncSession,
+        async_sessionmaker,
+        create_async_engine,
+    )
+
+    import app.db as appdb
+
+    appdb.engine = create_async_engine(postgis_url, echo=False, pool_pre_ping=True)
+    appdb.SessionLocal = async_sessionmaker(
+        appdb.engine, expire_on_commit=False, class_=AsyncSession
+    )
+
     from alembic.config import Config
 
     from alembic import command
@@ -65,12 +85,12 @@ async def client(_configure_env: None) -> AsyncIterator[AsyncClient]:
 
     from sqlalchemy import text
 
-    from app.db import engine
+    import app.db as appdb
 
-    async with engine.begin() as conn:
+    async with appdb.engine.begin() as conn:
         await conn.execute(
             text(
-                "TRUNCATE pairing_token, change_event, position, device, waypoint, "
-                "stage, route, event, team RESTART IDENTITY CASCADE"
+                "TRUNCATE race_photo, race_point, pairing_token, change_event, position, "
+                "device, waypoint, stage, route, event, team RESTART IDENTITY CASCADE"
             )
         )

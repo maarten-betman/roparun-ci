@@ -104,13 +104,24 @@ def extract_video_meta(raw: bytes) -> tuple[float | None, float | None, datetime
     return lat, lng, _creation_time(raw)
 
 
-def transcode_to_mp4(src: Path, dst: Path, drop_audio: bool = False) -> tuple[bool, str]:
+def transcode_to_mp4(
+    src: Path,
+    dst: Path,
+    drop_audio: bool = False,
+    crf: int = 26,
+    preset: str = "veryfast",
+) -> tuple[bool, str]:
     """Transcode any input to a broadly-playable H.264/AAC MP4 (faststart
     so it streams without a full download). Scales to ≤1080p, pads dims
     to even, forces yuv420p. Set `drop_audio` when the source has no
     audio (e.g. a canvas-recorded replay) so ffmpeg doesn't fuss about a
     missing audio stream. `-fflags +genpts` regenerates timestamps —
     MediaRecorder-produced WebMs often have none, which trips libvpx.
+
+    `crf` controls quality (lower = sharper, bigger; 18≈visually lossless,
+    23 default, 26 small). `preset` trades encode time for compression
+    efficiency. Uploaded phone clips keep the small default; the replay
+    export asks for a lower CRF + slower preset for a crisp result.
 
     Returns (ok, stderr_tail). The tail is the last few hundred chars of
     ffmpeg's stderr, useful in error responses so 'transcode failed'
@@ -133,9 +144,9 @@ def transcode_to_mp4(src: Path, dst: Path, drop_audio: bool = False) -> tuple[bo
         "-c:v",
         "libx264",
         "-preset",
-        "veryfast",
+        preset,
         "-crf",
-        "26",
+        str(crf),
         "-pix_fmt",
         "yuv420p",
     ]

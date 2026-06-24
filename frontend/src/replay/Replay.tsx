@@ -539,8 +539,19 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
     const canvas = map.getCanvas() as HTMLCanvasElement & {
       captureStream(fps?: number): MediaStream;
     };
-    const stream = canvas.captureStream(30);
-    const recorder = new MediaRecorder(stream, { mimeType });
+    const fps = 30;
+    const stream = canvas.captureStream(fps);
+    // Record at a high bitrate so the captured WebM keeps detail — the
+    // MediaRecorder default (~2.5 Mbps) is what makes map tiles + text
+    // look grainy, and no amount of server-side encoding recovers detail
+    // lost here. Scale with the canvas's pixel area (≈0.2 bits/pixel/frame),
+    // clamped to a sane 8–40 Mbps band.
+    const pixels = canvas.width * canvas.height;
+    const videoBitsPerSecond = Math.min(
+      40_000_000,
+      Math.max(8_000_000, Math.round(pixels * fps * 0.2)),
+    );
+    const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond });
     recorderRef.current = recorder;
     chunksRef.current = [];
     recorder.ondataavailable = (e: BlobEvent) => {

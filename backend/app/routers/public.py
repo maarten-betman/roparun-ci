@@ -69,7 +69,11 @@ async def replay_export_transcode(file: UploadFile = File(...)) -> Response:
         src = Path(d) / "in.webm"
         dst = Path(d) / "out.mp4"
         src.write_bytes(raw)
-        ok, err = await asyncio.to_thread(transcode_to_mp4, src, dst, True)
+        # Crisp export: low CRF + slower preset (the user is exporting for
+        # an edit, so quality beats encode speed / file size here).
+        ok, err = await asyncio.to_thread(
+            transcode_to_mp4, src, dst, True, 19, "medium"
+        )
         if not ok or not dst.exists():
             # Include the ffmpeg stderr tail so the client + browser tools
             # surface the real reason without grepping the api container.

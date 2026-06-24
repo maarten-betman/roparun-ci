@@ -692,7 +692,7 @@ async def _transcode_photo(photo_id: uuid.UUID, src_name: str) -> None:
     src = media / src_name
     dst_name = f"{src.stem}_h264.mp4"
     dst = media / dst_name
-    ok = await asyncio.to_thread(transcode_to_mp4, src, dst)
+    ok, _ = await asyncio.to_thread(transcode_to_mp4, src, dst)
     async with SessionLocal() as session:
         photo = await session.get(RacePhoto, photo_id)
         if photo is None:

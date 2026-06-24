@@ -104,20 +104,18 @@ def extract_video_meta(raw: bytes) -> tuple[float | None, float | None, datetime
     return lat, lng, _creation_time(raw)
 
 
-def transcode_to_mp4(src: Path, dst: Path, drop_audio: bool = False) -> bool:
+def transcode_to_mp4(src: Path, dst: Path, drop_audio: bool = False) -> tuple[bool, str]:
     """Transcode any input to a broadly-playable H.264/AAC MP4 (faststart
-    so it streams without a full download). Scales down to 1080p tall max
-    and pads to an even dim (libx264 rejects odd width/height), and
-    forces yuv420p so the result plays everywhere. Set `drop_audio` when
-    the source has no audio (e.g. a canvas-recorded replay) so ffmpeg
-    doesn't fuss about a missing audio stream. Returns True on success.
-    Blocking — run off the event loop (e.g. via asyncio.to_thread).
-    ffmpeg's stderr is captured and surfaced via the module logger on
-    failure so transcode regressions don't fail silently."""
-    # Multi-step filter so the output dimensions are always (a) ≤1080p,
-    # (b) even, and (c) yuv420p. Without the trunc-even pass, recordings
-    # whose native resolution has an odd side (very common with browser
-    # canvases at non-standard window sizes) fail to encode.
+    so it streams without a full download). Scales to ≤1080p, pads dims
+    to even, forces yuv420p. Set `drop_audio` when the source has no
+    audio (e.g. a canvas-recorded replay) so ffmpeg doesn't fuss about a
+    missing audio stream. `-fflags +genpts` regenerates timestamps —
+    MediaRecorder-produced WebMs often have none, which trips libvpx.
+
+    Returns (ok, stderr_tail). The tail is the last few hundred chars of
+    ffmpeg's stderr, useful in error responses so 'transcode failed'
+    isn't a black box. Blocking — run off the event loop (asyncio.to_thread).
+    """
     vf = (
         "scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease,"
         "scale=trunc(iw/2)*2:trunc(ih/2)*2,"
@@ -126,6 +124,8 @@ def transcode_to_mp4(src: Path, dst: Path, drop_audio: bool = False) -> bool:
     cmd = [
         "ffmpeg",
         "-y",
+        "-fflags",
+        "+genpts",
         "-i",
         str(src),
         "-vf",
@@ -153,17 +153,17 @@ def transcode_to_mp4(src: Path, dst: Path, drop_audio: bool = False) -> bool:
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         log.warning("ffmpeg run failed to start/finish: %s", exc)
-        return False
+        return False, f"ffmpeg run failed: {exc}"
     ok = proc.returncode == 0 and dst.exists() and dst.stat().st_size > 0
+    stderr = proc.stderr.decode("utf-8", errors="replace")
     if not ok:
-        # Surface the real ffmpeg error so 'transcode failed' isn't a
-        # black box in the deploy logs.
-        tail = proc.stderr.decode("utf-8", errors="replace").splitlines()[-30:]
+        tail = "\n".join(stderr.splitlines()[-30:])
         log.warning(
             "ffmpeg failed (rc=%s, dst exists=%s, size=%s):\n%s",
             proc.returncode,
             dst.exists(),
             dst.stat().st_size if dst.exists() else 0,
-            "\n".join(tail),
+            tail,
         )
-    return ok
+        return False, tail
+    return True, ""

@@ -69,9 +69,14 @@ async def replay_export_transcode(file: UploadFile = File(...)) -> Response:
         src = Path(d) / "in.webm"
         dst = Path(d) / "out.mp4"
         src.write_bytes(raw)
-        ok = await asyncio.to_thread(transcode_to_mp4, src, dst, True)
+        ok, err = await asyncio.to_thread(transcode_to_mp4, src, dst, True)
         if not ok or not dst.exists():
-            raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "transcode failed")
+            # Include the ffmpeg stderr tail so the client + browser tools
+            # surface the real reason without grepping the api container.
+            raise HTTPException(
+                status.HTTP_500_INTERNAL_SERVER_ERROR,
+                f"transcode failed:\n{err[-800:]}",
+            )
         data = dst.read_bytes()
     return Response(
         content=data,

@@ -479,7 +479,13 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
     );
   }, [onRoute, runners, mapReady]);
 
-  // Playback loop: advance `t` by realElapsed × speed each frame.
+  // Playback loop: advance `t` by realElapsed × speed each frame. When
+  // the timeline runs out we also stop any active recorder right here
+  // (rather than via a state-driven effect) so the stop happens after
+  // playback has actually produced frames — a separate
+  // [exportState, playing] effect would fire on the same render that
+  // setExportState("recording") runs, before setPlaying(true) has
+  // propagated, and would `stop()` an empty WebM.
   useEffect(() => {
     if (!playing) return;
     let raf = 0;
@@ -491,6 +497,10 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
         const next = prev + dt * speed;
         if (next >= endMs) {
           setPlaying(false);
+          if (recorderRef.current?.state === "recording") {
+            recorderRef.current.stop();
+            recorderRef.current = null;
+          }
           return endMs;
         }
         return next;
@@ -573,16 +583,6 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
     recorder.start();
     requestAnimationFrame(() => setPlaying(true));
   };
-
-  // When the playback loop finishes during a recording (the existing rAF
-  // flips `playing` to false at endMs), stop the MediaRecorder so its
-  // onstop builds the blob + uploads.
-  useEffect(() => {
-    if (exportState !== "recording") return;
-    if (playing) return;
-    recorderRef.current?.stop();
-    recorderRef.current = null;
-  }, [exportState, playing]);
 
   const fmtClock = (ms: number) =>
     new Date(ms).toLocaleString("nl-NL", {

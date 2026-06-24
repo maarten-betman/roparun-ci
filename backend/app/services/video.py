@@ -18,12 +18,15 @@ Returns best-effort values; any field may be None if absent.
 
 from __future__ import annotations
 
+import logging
 import re
 import struct
 import subprocess
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 # QuickTime/MP4 epoch is 1904-01-01 UTC.
 _QT_EPOCH = datetime(1904, 1, 1, tzinfo=UTC)
@@ -103,24 +106,38 @@ def extract_video_meta(raw: bytes) -> tuple[float | None, float | None, datetime
 
 def transcode_to_mp4(src: Path, dst: Path, drop_audio: bool = False) -> bool:
     """Transcode any input to a broadly-playable H.264/AAC MP4 (faststart
-    so it streams without a full download). Scales down to 1080p tall max,
-    keeps aspect. Set `drop_audio` when the source has no audio (e.g. a
-    canvas-recorded replay) so ffmpeg doesn't fuss about a missing audio
-    stream. Returns True on success. Blocking — run off the event loop
-    (e.g. via a BackgroundTask threadpool or asyncio.to_thread)."""
+    so it streams without a full download). Scales down to 1080p tall max
+    and pads to an even dim (libx264 rejects odd width/height), and
+    forces yuv420p so the result plays everywhere. Set `drop_audio` when
+    the source has no audio (e.g. a canvas-recorded replay) so ffmpeg
+    doesn't fuss about a missing audio stream. Returns True on success.
+    Blocking — run off the event loop (e.g. via asyncio.to_thread).
+    ffmpeg's stderr is captured and surfaced via the module logger on
+    failure so transcode regressions don't fail silently."""
+    # Multi-step filter so the output dimensions are always (a) ≤1080p,
+    # (b) even, and (c) yuv420p. Without the trunc-even pass, recordings
+    # whose native resolution has an odd side (very common with browser
+    # canvases at non-standard window sizes) fail to encode.
+    vf = (
+        "scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease,"
+        "scale=trunc(iw/2)*2:trunc(ih/2)*2,"
+        "format=yuv420p"
+    )
     cmd = [
         "ffmpeg",
         "-y",
         "-i",
         str(src),
         "-vf",
-        "scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease",
+        vf,
         "-c:v",
         "libx264",
         "-preset",
         "veryfast",
         "-crf",
         "26",
+        "-pix_fmt",
+        "yuv420p",
     ]
     if drop_audio:
         cmd += ["-an"]
@@ -130,11 +147,23 @@ def transcode_to_mp4(src: Path, dst: Path, drop_audio: bool = False) -> bool:
     try:
         proc = subprocess.run(
             cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            capture_output=True,
             timeout=900,  # 15 min ceiling per clip
             check=False,
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        log.warning("ffmpeg run failed to start/finish: %s", exc)
         return False
-    return proc.returncode == 0 and dst.exists() and dst.stat().st_size > 0
+    ok = proc.returncode == 0 and dst.exists() and dst.stat().st_size > 0
+    if not ok:
+        # Surface the real ffmpeg error so 'transcode failed' isn't a
+        # black box in the deploy logs.
+        tail = proc.stderr.decode("utf-8", errors="replace").splitlines()[-30:]
+        log.warning(
+            "ffmpeg failed (rc=%s, dst exists=%s, size=%s):\n%s",
+            proc.returncode,
+            dst.exists(),
+            dst.stat().st_size if dst.exists() else 0,
+            "\n".join(tail),
+        )
+    return ok

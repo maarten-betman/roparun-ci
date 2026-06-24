@@ -1,9 +1,21 @@
 from __future__ import annotations
 
+import asyncio
 import secrets
+import tempfile
 from datetime import datetime
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +28,7 @@ from ..schemas.route import RouteDetail
 from ..security import REPLAY_COOKIE, replay_authed, require_replay
 from ..services.geo import to_point
 from ..services.routes import load_route_detail
+from ..services.video import transcode_to_mp4
 
 router = APIRouter(prefix="/public", tags=["public"])
 
@@ -32,6 +45,39 @@ async def replay_status(request: Request) -> dict[str, bool]:
         "required": bool(get_settings().replay_password),
         "authed": replay_authed(request),
     }
+
+
+@router.post(
+    "/replay-export-transcode",
+    dependencies=[Depends(require_replay)],
+)
+async def replay_export_transcode(file: UploadFile = File(...)) -> Response:
+    """Transcode a client-recorded replay (WebM from canvas.captureStream)
+    into a broadly-playable H.264 MP4 and return the bytes inline. Sync
+    because the user is actively waiting for the download. Capped well
+    above any realistic recording; nginx proxy_read_timeout must be set
+    high enough to cover the ffmpeg run."""
+    raw = await file.read()
+    if len(raw) > 500 * 1024 * 1024:
+        raise HTTPException(
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            "exported recording exceeds 500 MB cap",
+        )
+    if not raw:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "empty upload")
+    with tempfile.TemporaryDirectory() as d:
+        src = Path(d) / "in.webm"
+        dst = Path(d) / "out.mp4"
+        src.write_bytes(raw)
+        ok = await asyncio.to_thread(transcode_to_mp4, src, dst, True)
+        if not ok or not dst.exists():
+            raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "transcode failed")
+        data = dst.read_bytes()
+    return Response(
+        content=data,
+        media_type="video/mp4",
+        headers={"Content-Disposition": 'attachment; filename="roparun-replay.mp4"'},
+    )
 
 
 @router.post("/replay-login")

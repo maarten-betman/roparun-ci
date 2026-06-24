@@ -74,6 +74,19 @@ export const api = {
       body: JSON.stringify({ password }),
     }),
 
+  /** Upload a canvas-recorded WebM; backend transcodes to H.264 MP4 and
+   *  returns the bytes for download. */
+  async transcodeReplayExport(webm: Blob): Promise<Blob> {
+    const form = new FormData();
+    form.append("file", webm, "replay.webm");
+    const res = await fetch(`${BASE}/public/replay-export-transcode`, {
+      method: "POST",
+      body: form,
+    });
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+    return await res.blob();
+  },
+
   publicRoutePath: (publicPath: string) => `/public/${publicPath}`,
   getPublicRoute: (publicPath: string) => j<RouteDetail>(`/public/${publicPath}`),
 };

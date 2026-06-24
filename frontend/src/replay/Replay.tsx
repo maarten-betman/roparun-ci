@@ -85,7 +85,6 @@ function lineFC(coords: LngLat[]): GeoJSON.FeatureCollection {
 export function Replay({ apiKey, publicPath }: ReplayProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
-  const markerRef = useRef<maplibregl.Marker | null>(null);
   // Co-located media grouped by rounded coordinate, mirrored to a ref so
   // the (once-bound) map click handler reads the current grouping.
   const groupsRef = useRef<PhotoGroup[]>([]);
@@ -105,6 +104,16 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
   const [t, setT] = useState(0); // current replay time (epoch ms)
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1000);
+
+  // Video export: "idle" → "recording" (MediaRecorder running while the
+  // replay plays through) → "transcoding" (server-side ffmpeg WebM→MP4)
+  // → back to "idle" once the MP4 download fires. `recorderRef` holds the
+  // active recorder so we can stop it deterministically when the replay
+  // ends, and `chunksRef` accumulates dataavailable payloads.
+  const [exportState, setExportState] = useState<"idle" | "recording" | "transcoding">("idle");
+  const [exportError, setExportError] = useState<string | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
 
   // Password gate: "checking" until replay-status resolves, "locked" when
   // a password is required and we're not authed, "open" otherwise.
@@ -358,24 +367,37 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
         map.on("mouseleave", layer, cursorOff);
       }
 
-      const el = document.createElement("div");
-      Object.assign(el.style, {
-        width: "18px",
-        height: "18px",
-        borderRadius: "50%",
-        background: MARKER_COLOR,
-        border: "3px solid #ffffff",
-        boxShadow: "0 0 0 2px rgba(11,61,145,0.4)",
+      // Self marker — canvas circle layers (halo + core) instead of an
+      // HTML marker, so it's part of the map canvas pixels and gets
+      // captured by canvas.captureStream() during video export.
+      map.addSource("self", { type: "geojson", data: emptyFC() });
+      map.addLayer({
+        id: "self-pulse",
+        type: "circle",
+        source: "self",
+        paint: {
+          "circle-radius": 14,
+          "circle-color": MARKER_COLOR,
+          "circle-opacity": 0.25,
+        },
       });
-      markerRef.current = new maplibregl.Marker({ element: el, anchor: "center" });
+      map.addLayer({
+        id: "self-core",
+        type: "circle",
+        source: "self",
+        paint: {
+          "circle-radius": 7,
+          "circle-color": MARKER_COLOR,
+          "circle-stroke-width": 2,
+          "circle-stroke-color": "#ffffff",
+        },
+      });
 
       setMapReady(true);
     });
 
     return () => {
       ro.disconnect();
-      markerRef.current?.remove();
-      markerRef.current = null;
       map.remove();
       mapRef.current = null;
       setMapReady(false);
@@ -442,11 +464,16 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
     map.setPaintProperty("photos-count", "text-opacity", caseExpr(1, 0.4));
   }, [t, mapReady, photoGroups]);
 
-  // Update marker + covered line as the replay time advances.
+  // Update self marker + covered line as the replay time advances.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !onRoute || !runners) return;
-    markerRef.current?.setLngLat(onRoute.coord).addTo(map);
+    (map.getSource("self") as maplibregl.GeoJSONSource | undefined)?.setData({
+      type: "FeatureCollection",
+      features: [
+        { type: "Feature", properties: {}, geometry: { type: "Point", coordinates: onRoute.coord } },
+      ],
+    });
     (map.getSource("covered") as maplibregl.GeoJSONSource | undefined)?.setData(
       lineFC(sliceByDistance(runners.track, runners.cum, 0, onRoute.distM)),
     );
@@ -479,6 +506,83 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
     if (t >= endMs) setT(startMs); // restart from the beginning
     setPlaying((p) => !p);
   };
+
+  const startExport = () => {
+    const map = mapRef.current;
+    if (!map || !track || exportState !== "idle") return;
+    setExportError(null);
+    // Pick the best WebM mimeType the browser supports.
+    const candidates = [
+      "video/webm;codecs=vp9",
+      "video/webm;codecs=vp8",
+      "video/webm",
+    ];
+    const supports = (m: string) =>
+      typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(m);
+    const mimeType = candidates.find(supports);
+    if (!mimeType) {
+      setExportError(
+        "Deze browser kan geen video opnemen (MediaRecorder/WebM niet beschikbaar).",
+      );
+      return;
+    }
+    const canvas = map.getCanvas() as HTMLCanvasElement & {
+      captureStream(fps?: number): MediaStream;
+    };
+    const stream = canvas.captureStream(30);
+    const recorder = new MediaRecorder(stream, { mimeType });
+    recorderRef.current = recorder;
+    chunksRef.current = [];
+    recorder.ondataavailable = (e: BlobEvent) => {
+      if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
+    };
+    recorder.onerror = () => {
+      setExportError("Opname mislukt.");
+      setExportState("idle");
+    };
+    recorder.onstop = async () => {
+      const webm = new Blob(chunksRef.current, { type: mimeType });
+      chunksRef.current = [];
+      if (webm.size === 0) {
+        setExportState("idle");
+        return;
+      }
+      setExportState("transcoding");
+      try {
+        const mp4 = await api.transcodeReplayExport(webm);
+        const url = URL.createObjectURL(mp4);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "roparun-replay.mp4";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } catch (err) {
+        setExportError(`Server-omzetting mislukt: ${(err as Error).message}`);
+      } finally {
+        setExportState("idle");
+      }
+    };
+    // Rewind to the start, kick the recorder, then start playback on the
+    // next frame so the first recorded frame already shows the start
+    // state (covered line empty, marker at km 0).
+    setPlaying(false);
+    setT(startMs);
+    setExportState("recording");
+    recorder.start();
+    requestAnimationFrame(() => setPlaying(true));
+  };
+
+  // When the playback loop finishes during a recording (the existing rAF
+  // flips `playing` to false at endMs), stop the MediaRecorder so its
+  // onstop builds the blob + uploads.
+  useEffect(() => {
+    if (exportState !== "recording") return;
+    if (playing) return;
+    recorderRef.current?.stop();
+    recorderRef.current = null;
+  }, [exportState, playing]);
 
   const fmtClock = (ms: number) =>
     new Date(ms).toLocaleString("nl-NL", {
@@ -587,6 +691,31 @@ export function Replay({ apiKey, publicPath }: ReplayProps) {
               </button>
             ))}
           </div>
+
+          <button
+            type="button"
+            onClick={startExport}
+            disabled={!track || exportState !== "idle"}
+            title="Neem de replay als MP4 op om in een montage te gebruiken. De kaart speelt af op de gekozen snelheid; pan/zoom voor je begint."
+            style={{
+              border: "1px solid #d1d5db",
+              background: exportState === "idle" ? "#fff" : "#fef3c7",
+              color: exportState === "idle" ? "#374151" : "#92400e",
+              borderRadius: 4,
+              padding: "5px 10px",
+              cursor: exportState === "idle" && track ? "pointer" : "default",
+              fontSize: 12,
+            }}
+          >
+            {exportState === "idle"
+              ? "🎬 Exporteer video"
+              : exportState === "recording"
+                ? "● Opnemen…"
+                : "Omzetten…"}
+          </button>
+          {exportError && (
+            <span style={{ color: "#b91c1c", fontSize: 11 }}>{exportError}</span>
+          )}
 
           <div style={{ display: "flex", gap: 16, marginLeft: "auto", fontSize: 13 }}>
             <Stat label="Tijd" value={track ? fmtClock(t) : "–"} />

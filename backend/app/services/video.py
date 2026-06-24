@@ -101,11 +101,13 @@ def extract_video_meta(raw: bytes) -> tuple[float | None, float | None, datetime
     return lat, lng, _creation_time(raw)
 
 
-def transcode_to_mp4(src: Path, dst: Path) -> bool:
+def transcode_to_mp4(src: Path, dst: Path, drop_audio: bool = False) -> bool:
     """Transcode any input to a broadly-playable H.264/AAC MP4 (faststart
     so it streams without a full download). Scales down to 1080p tall max,
-    keeps aspect. Returns True on success. Blocking — run off the event
-    loop (e.g. via a BackgroundTask threadpool)."""
+    keeps aspect. Set `drop_audio` when the source has no audio (e.g. a
+    canvas-recorded replay) so ffmpeg doesn't fuss about a missing audio
+    stream. Returns True on success. Blocking — run off the event loop
+    (e.g. via a BackgroundTask threadpool or asyncio.to_thread)."""
     cmd = [
         "ffmpeg",
         "-y",
@@ -119,14 +121,12 @@ def transcode_to_mp4(src: Path, dst: Path) -> bool:
         "veryfast",
         "-crf",
         "26",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "128k",
-        "-movflags",
-        "+faststart",
-        str(dst),
     ]
+    if drop_audio:
+        cmd += ["-an"]
+    else:
+        cmd += ["-c:a", "aac", "-b:a", "128k"]
+    cmd += ["-movflags", "+faststart", str(dst)]
     try:
         proc = subprocess.run(
             cmd,
